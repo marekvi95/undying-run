@@ -64,7 +64,7 @@ make start     # → open http://127.0.0.1:8090/
 | `scripts/web-setup.sh` | installs the wasm toolchain (wasi-sdk, wasm-bindgen, binaryen) |
 | `scripts/web-build.sh` | builds the client into `web/dist/` |
 
-**Prerequisites:** [Rust](https://rustup.rs/), `make`, `curl`, `unzip`.
+**Prerequisites:** [Rust](https://rustup.rs/), `make`, `curl`, `unzip`, and a bash shell. On Windows, run everything from Git Bash; PowerShell and cmd can't run the scripts.
 
 Run `make` (or `make help`) to list every target.
 
