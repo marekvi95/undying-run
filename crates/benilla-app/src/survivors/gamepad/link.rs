@@ -5,17 +5,18 @@
 //! kernel lists one by its name again ([`kernel_has`]) restarts gilrs, whose start-up enumeration
 //! finds it, and it rejoins as the same bevy [`Gamepad`] entity it was.
 //!
-//! The event translation is bevy_gilrs 0.18's own (`gilrs_system.rs`, `converter.rs`), minus
-//! rumble, which nothing here plays.
+//! The event translation and the rumble are bevy_gilrs 0.18's own (`gilrs_system.rs`,
+//! `converter.rs`, `rumble.rs`), cut to what this mode uses.
 
 use bevy::input::gamepad::{
-    GamepadAxis, GamepadButton, GamepadConnection, GamepadConnectionEvent,
+    GamepadAxis, GamepadButton, GamepadConnection, GamepadConnectionEvent, GamepadRumbleRequest,
     RawGamepadAxisChangedEvent, RawGamepadButtonChangedEvent, RawGamepadEvent,
 };
 use bevy::platform::cell::SyncCell;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use gilrs::ev::filter::axis_dpad_to_button;
+use gilrs::ff::{BaseEffect, BaseEffectType, EffectBuilder, Replay};
 use gilrs::{EventType, Filter, GamepadId, Gilrs};
 
 /// Seconds between restarts while a pad that was connected stays missing.
@@ -28,6 +29,8 @@ const MAX_RETRIES: u32 = 10;
 struct Link {
     gilrs: Option<SyncCell<Gilrs>>,
     pads: Pads,
+    /// Playing rumbles and the real time each ends; dropping an effect stops it.
+    rumbles: Vec<(f32, SyncCell<gilrs::ff::Effect>)>,
 }
 
 #[derive(Default)]
@@ -49,8 +52,11 @@ pub(super) fn plugin(app: &mut App) {
     app.insert_resource(Link {
         gilrs,
         pads: Pads::default(),
+        rumbles: Vec::new(),
     })
-    .add_systems(PreUpdate, pump.before(bevy::input::InputSystems));
+    .add_message::<GamepadRumbleRequest>()
+    .add_systems(PreUpdate, pump.before(bevy::input::InputSystems))
+    .add_systems(PostUpdate, rumble);
 }
 
 fn start() -> Option<SyncCell<Gilrs>> {
@@ -82,6 +88,7 @@ fn pump(
     let Link {
         gilrs: cell,
         pads: link,
+        rumbles,
     } = &mut *link;
 
     if !link.missing.is_empty() && now >= link.retry_at && link.retries < MAX_RETRIES {
@@ -96,6 +103,7 @@ fn pump(
                 "gamepad: a pad is back in the kernel but not in gilrs; restarting gilrs ({}/{MAX_RETRIES})",
                 link.retries
             );
+            rumbles.clear();
             *cell = start();
             link.entities.clear();
             link.announced = false;
@@ -166,6 +174,71 @@ fn pump(
         }
     }
     gilrs.inc();
+}
+
+/// Play [`GamepadRumbleRequest`]s on pads that have force feedback, and stop them when done.
+fn rumble(
+    time: Res<Time<Real>>,
+    mut link: ResMut<Link>,
+    mut requests: MessageReader<GamepadRumbleRequest>,
+) {
+    let now = time.elapsed_secs();
+    let link = &mut *link;
+    link.rumbles.retain(|(end, _)| *end > now);
+    let Some(cell) = link.gilrs.as_mut() else {
+        requests.clear();
+        return;
+    };
+    let gilrs = cell.get();
+    for request in requests.read() {
+        let target = request.gamepad();
+        let Some(id) = link
+            .pads
+            .entities
+            .iter()
+            .find_map(|(id, e)| (*e == target).then_some(*id))
+            .filter(|id| gilrs.gamepad(*id).is_ff_supported())
+        else {
+            continue;
+        };
+        match request {
+            GamepadRumbleRequest::Stop { .. } => link.rumbles.clear(),
+            GamepadRumbleRequest::Add {
+                duration,
+                intensity,
+                ..
+            } => {
+                let magnitude = |r: f32| (r.clamp(0.0, 1.0) * f32::from(u16::MAX)) as u16;
+                let scheduling = Replay {
+                    play_for: (*duration).into(),
+                    ..Default::default()
+                };
+                let effect = EffectBuilder::new()
+                    .add_effect(BaseEffect {
+                        kind: BaseEffectType::Strong {
+                            magnitude: magnitude(intensity.strong_motor),
+                        },
+                        scheduling,
+                        ..Default::default()
+                    })
+                    .add_effect(BaseEffect {
+                        kind: BaseEffectType::Weak {
+                            magnitude: magnitude(intensity.weak_motor),
+                        },
+                        scheduling,
+                        ..Default::default()
+                    })
+                    .gamepads(&[id])
+                    .finish(gilrs);
+                match effect.and_then(|e| e.play().map(|()| e)) {
+                    Ok(e) => link
+                        .rumbles
+                        .push((now + duration.as_secs_f32(), SyncCell::new(e))),
+                    Err(err) => debug!("gamepad: rumble failed: {err}"),
+                }
+            }
+        }
+    }
 }
 
 /// Announce a pad, on the entity it had before if it was here before.

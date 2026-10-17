@@ -31,17 +31,25 @@ preview hero. Your race, gender, class and zone are remembered across reloads.
 | Playing | **left stick / D-pad** | move; the hero faces where he runs |
 | Playing | **right stick** (camera locked) | aim: the hero faces it while held (twin-stick) |
 | Playing | **right stick** (camera unlocked) | swing and tilt the camera; movement follows the camera |
-| Menu / level up / paused / game over | **either stick** | move the cursor |
+| Menu / level up / paused / game over | **D-pad / left stick** | jump to the next button that way (held: repeat) |
+| Menu / level up / paused / game over | **right stick** | move the cursor freely |
+| Menu / level up / paused / game over | **A / east** | click the highlighted button or card |
 | Playing | **B / south** | jump |
-| Playing | **A / east** | class movement spell (from level 5) |
+| Playing | **A / east** | class movement spell (from level 5): Blink goes where you face, Charge takes the enemy ahead |
 | Playing | **X / north** | unlock / lock the camera |
-| Level up | **A / east** | click the highlighted card |
-| Level up | **D-pad left / up / right** | pick card 1 / 2 / 3 directly |
-| Menu / paused / game over | **A / east** | click / confirm |
 | Playing | **L / R** | zoom out / in |
 | Menu | **+ / Start** | Enter World |
 | Playing / paused | **+ / Start** | pause / resume |
+| Paused / game over | **− / Select** | quit the game |
 
 With a pad connected the camera starts closer (20 yd) and lower (50°) for a handheld screen, and
-while the pad steers it eases a few yards ahead of where the hero runs. The zoom, by wheel or
-**L / R**, is remembered across runs and restarts.
+while the pad steers it eases a few yards ahead of where the hero runs. It pulls in front of
+walls and hills like the client camera, and a gold ring on the ground marks the hero through
+anything that still covers him. The zoom, by wheel or **L / R**, is remembered across runs and
+restarts.
+
+The run pauses itself when the pad drops out or the machine sleeps, and the pad rumbles when the
+hero is hit (where the controller supports it).
+
+On a handheld, `SURVIVORS_MAX_FPS` caps the frame rate and `SURVIVORS_UI_SCALE` scales the HUD and
+the cards; the Switch launcher sets both.

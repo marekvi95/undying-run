@@ -1,21 +1,26 @@
 //! Gamepad play for Warcraft Survivors. 1.12.1 has no gamepad and this mode has no reference to
 //! match (`CONTROLS.md`); the pad instead drives the same keys, mouse cursor and wheel the
 //! keyboard and mouse already feed, so `hero`, `mobility`, `hud`, `menu` and `cards` need no pad
-//! code of their own — except that movement and facing in play go through [`PadSteer`], since a
-//! mouse cursor left wherever the right stick last put it made the hero backpedal away from it — — a face-button click lands on whatever bevy_ui button the cursor sits over,
-//! the same path a real mouse click takes ([`Interaction`]).
+//! code of their own, except that movement and facing in play go through [`PadSteer`] (a mouse
+//! cursor left wherever the right stick last put it made the hero backpedal away from it). A
+//! face-button click lands on whatever bevy_ui button the cursor sits over, the same path a real
+//! mouse click takes ([`Interaction`]); [`nav`] snaps the cursor from button to button.
 //!
 //! | Pad | Does the same as |
 //! |---|---|
 //! | Left stick, D-pad (play) | [`PadSteer::walk`]: analog movement, the hero faces where he runs |
 //! | Right stick (play) | [`PadSteer::look`]: locked camera, the hero faces it; unlocked, it swings the camera |
-//! | Either stick (outside play) | moving the mouse: menu/card/pause navigation |
+//! | D-pad, left stick (outside play) | [`nav`]: jump the cursor to the next button that way |
+//! | Right stick (outside play) | moving the mouse freely |
 //! | South (B) | `Space`, jump |
 //! | East (A) | `F`, the class mobility spell; click in menus |
 //! | North | `C`, the camera lock/unlock |
-//! | D-pad left / up / right | pick level-up card 1 / 2 / 3 |
 //! | Start | `Escape`, pause; `Enter` at the menu, Enter World |
+//! | Select (−), paused or results | quit the game |
 //! | Left / right shoulder | the mouse wheel, zoom out / in |
+//!
+//! The pad pauses the run when it drops out or the machine sleeps ([`auto_pause`]), and rumbles
+//! when the hero is hit ([`rumble_on_hurt`]; [`link`] plays it).
 //!
 //! The first pad to connect also tunes the camera for a handheld: closer, lower, and easing a few
 //! yards ahead of the run while the pad steers (`hero::place_camera`).
@@ -26,15 +31,21 @@
 //! wired in here, so the module is cfg'd out of the web build.
 
 mod link;
+mod nav;
 
 use std::hash::Hash;
 
+use std::time::Duration;
+
+use bevy::input::gamepad::{
+    GamepadConnection, GamepadConnectionEvent, GamepadRumbleIntensity, GamepadRumbleRequest,
+};
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
 use super::hero::{CamRig, PadSteer};
-use super::Phase;
+use super::{Phase, Run};
 
 /// Stick deflection below which a stick is treated as at rest.
 const DEADZONE: f32 = 0.2;
@@ -43,17 +54,21 @@ const CURSOR_SPEED: f32 = 1200.0;
 /// Wheel notches a second at full shoulder-button hold (`MouseScrollUnit::Line`, as a real wheel
 /// sends).
 const ZOOM_RATE: f32 = 3.0;
+/// A frame longer than this, in real seconds, was a suspend (or a stall as bad): pause the run.
+const SLEPT_SECS: f32 = 1.0;
 
 pub(super) fn plugin(app: &mut App) {
     app.add_plugins(link::plugin)
         .init_resource::<PadSteer>()
         .add_systems(
             PreUpdate,
-            (tune_camera, drive_gamepad)
+            (tune_camera, auto_pause, drive_gamepad, nav::navigate)
+                .chain()
                 .after(bevy::input::InputSystems)
                 // The virtual click and cursor reach bevy_ui's hover/press pass the same frame.
                 .before(bevy::ui::UiSystems::Focus),
-        );
+        )
+        .add_systems(Update, rumble_on_hurt);
 }
 
 /// The whole pad, once a frame, before anything else reads a key, the cursor or the wheel.
@@ -64,6 +79,7 @@ fn drive_gamepad(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut mouse: ResMut<ButtonInput<MouseButton>>,
     mut wheel: MessageWriter<MouseWheel>,
+    mut exit: MessageWriter<AppExit>,
     mut steer: ResMut<PadSteer>,
     motion: Res<AccumulatedMouseMotion>,
     phase: Res<State<Phase>>,
@@ -115,12 +131,8 @@ fn drive_gamepad(
         steer.look = Vec2::ZERO;
     }
 
-    // ── Virtual cursor, outside play only: either stick, the left taking precedence. ──
-    let cursor_stick = if left.length() >= DEADZONE {
-        left
-    } else {
-        right
-    };
+    // ── Free cursor, outside play only: the right stick (the left one and the D-pad snap, `nav`). ──
+    let cursor_stick = right;
     if !playing && cursor_stick.length() >= DEADZONE {
         let speed = CURSOR_SPEED * deflection(cursor_stick.length()).powf(1.5);
         let at = window
@@ -155,15 +167,6 @@ fn drive_gamepad(
         playing && pad.pressed(GamepadButton::North),
     );
 
-    let picking = *phase.get() == Phase::LevelUp;
-    for (key, button) in [
-        (KeyCode::Digit1, GamepadButton::DPadLeft),
-        (KeyCode::Digit2, GamepadButton::DPadUp),
-        (KeyCode::Digit3, GamepadButton::DPadRight),
-    ] {
-        set(&mut keys, key, picking && pad.pressed(button));
-    }
-
     let clickable = matches!(
         *phase.get(),
         Phase::Menu | Phase::LevelUp | Phase::Paused | Phase::GameOver
@@ -188,6 +191,13 @@ fn drive_gamepad(
         KeyCode::Escape,
         *phase.get() != Phase::Menu && pad.pressed(GamepadButton::Start),
     );
+
+    // Select quits from the pause menu or the results; a clean exit, so the launcher stops too.
+    if matches!(*phase.get(), Phase::Paused | Phase::GameOver)
+        && pad.just_pressed(GamepadButton::Select)
+    {
+        exit.write(AppExit::Success);
+    }
 
     // ── Shoulder buttons: the mouse wheel, zoom out / in. ──
     let notches = ZOOM_RATE * time.delta_secs();
@@ -215,6 +225,58 @@ fn tune_camera(added: Query<(), Added<Gamepad>>, mut rig: ResMut<CamRig>, mut do
     if !*done && !added.is_empty() {
         *done = true;
         rig.tune_for_pad();
+    }
+}
+
+/// Pause the run when the pad drops out, or after a frame as long as a suspend: coming back to
+/// the Switch from sleep finds the run waiting rather than the hero dead.
+fn auto_pause(
+    time: Res<Time<Real>>,
+    phase: Res<State<Phase>>,
+    mut connections: MessageReader<GamepadConnectionEvent>,
+    mut next: ResMut<NextState<Phase>>,
+) {
+    let dropped = connections
+        .read()
+        .any(|c| matches!(c.connection, GamepadConnection::Disconnected));
+    if *phase.get() == Phase::Playing && (dropped || time.delta_secs() > SLEPT_SECS) {
+        next.set(Phase::Paused);
+    }
+}
+
+/// A short buzz when the hero is hit, harder the bigger the blow, and a long one when he dies.
+fn rumble_on_hurt(
+    run: Res<Run>,
+    phase: Res<State<Phase>>,
+    pads: Query<Entity, With<Gamepad>>,
+    mut last: Local<Option<f32>>,
+    mut rumble: MessageWriter<GamepadRumbleRequest>,
+) {
+    let was = last.replace(run.hp);
+    let Some(was) = was.filter(|_| *phase.get() == Phase::Playing) else {
+        return;
+    };
+    let lost = was - run.hp;
+    if lost <= 0.5 {
+        return;
+    }
+    let (strength, ms) = if run.hp <= 0.0 {
+        (1.0, 450)
+    } else {
+        (
+            (lost / run.stats().max_hp.max(1.0) * 5.0).clamp(0.25, 0.9),
+            110,
+        )
+    };
+    for gamepad in &pads {
+        rumble.write(GamepadRumbleRequest::Add {
+            gamepad,
+            duration: Duration::from_millis(ms),
+            intensity: GamepadRumbleIntensity {
+                strong_motor: strength,
+                weak_motor: strength * 0.6,
+            },
+        });
     }
 }
 
