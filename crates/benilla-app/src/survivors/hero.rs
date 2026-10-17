@@ -31,11 +31,23 @@ const GRAVITY: f32 = 19.291_105;
 
 /// Radians of orbit per raw mouse unit while right-dragging.
 const ORBIT_RATE: f32 = 0.008;
+/// Radians a second of orbit (yaw) and tilt (pitch) at full right-stick deflection.
+const STICK_YAW_RATE: f32 = 2.6;
+const STICK_PITCH_RATE: f32 = 1.4;
 /// Elevation clamp (radians): ~10°..~83° above the horizon, so the camera never dives underground.
 const PITCH_MIN: f32 = 0.18;
 const PITCH_MAX: f32 = 1.45;
 /// The locked view's tilt.
 const FIXED_PITCH: f32 = 61.0 * std::f32::consts::PI / 180.0;
+/// How far ahead of a running hero the pad-steered camera looks, yards, and how fast (1/s) it
+/// eases toward that lead.
+const LEAD_YD: f32 = 4.0;
+const LEAD_RATE: f32 = 2.5;
+/// A hero step longer than this in one frame is a blink or a respawn, not a run.
+const LEAD_JUMP_YD: f32 = 3.0;
+/// How fast (1/s) the camera eases back out once whatever pulled it in clears: the client
+/// camera's `CAM_RETURN_RATE`.
+const PULL_RETURN_RATE: f32 = 6.0;
 /// Wheel zoom range, yards from the hero's shoulders.
 const ZOOM_MIN: f32 = 1.5;
 const ZOOM_MAX: f32 = 70.0;
@@ -59,6 +71,28 @@ pub(super) struct CamRig {
     /// Elevation above the horizon (radians), clamped so the camera never dives underground.
     pub pitch: f32,
     pub mode: CamMode,
+    /// The tilt locking the camera snaps back to; the pad tunes it lower ([`CamRig::tune_for_pad`]).
+    pub fixed_pitch: f32,
+    /// The zoom last saved to `survivors-camera.txt`, `None` with nothing saved.
+    pub saved_dist: Option<f32>,
+    /// The camera's eased look-ahead on the ground, and the hero's last focus it is measured from.
+    lead: Vec3,
+    last_focus: Option<Vec3>,
+    /// The collision-held boom length, yards; `None` until the first sweep.
+    pull: Option<f32>,
+}
+
+impl CamRig {
+    /// Closer and lower than the laptop view, for a handheld's small screen; a saved zoom wins.
+    pub(super) fn tune_for_pad(&mut self) {
+        self.fixed_pitch = 50.0_f32.to_radians();
+        if self.mode == CamMode::Fixed {
+            self.pitch = self.fixed_pitch;
+        }
+        if self.saved_dist.is_none() {
+            self.dist = 20.0;
+        }
+    }
 }
 
 impl Default for CamRig {
@@ -69,8 +103,38 @@ impl Default for CamRig {
             yaw: 0.0,
             pitch: FIXED_PITCH,
             mode: CamMode::Fixed,
+            fixed_pitch: FIXED_PITCH,
+            saved_dist: None,
+            lead: Vec3::ZERO,
+            last_focus: None,
+            pull: None,
         }
     }
+}
+
+/// The gamepad's steering in play (`gamepad.rs`, native only; absent, or inactive while the mouse
+/// is in use). Both are stick-space: +x right, +y up the screen.
+#[derive(Resource, Default, Clone, Copy, PartialEq)]
+pub(super) struct PadSteer {
+    /// Whether the pad, not the mouse and keyboard, is steering.
+    pub(super) active: bool,
+    /// Unit run direction, or zero.
+    pub(super) walk: Vec2,
+    /// The right stick, past its deadzone: aim with the camera locked, a camera swing unlocked.
+    pub(super) look: Vec2,
+}
+
+impl PadSteer {
+    fn steering(pad: Option<&Self>) -> Option<&Self> {
+        pad.filter(|p| p.active)
+    }
+}
+
+/// Stick-space to the ground plane, turned by the camera's yaw: screen-up is away from the lens.
+fn stick_to_ground(v: Vec2, yaw: f32) -> Vec3 {
+    let (sy, cy) = yaw.sin_cos();
+    let (x, z) = (v.x, -v.y);
+    Vec3::new(x * cy + z * sy, 0.0, z * cy - x * sy)
 }
 
 /// Where a battleground's runs start.
@@ -151,9 +215,15 @@ pub(super) fn aim_cursor(
     cams: Query<(&Camera, &Transform), With<WorldCamera>>,
     hero: Query<&Transform, (With<Hero>, Without<WorldCamera>)>,
     world: WorldPoint,
+    pad: Option<Res<PadSteer>>,
     mut aim: ResMut<AimPoint>,
 ) {
     let point = (|| {
+        // Steered by the pad, the cursor is wherever the right stick last left it in a menu; the
+        // aimed spells go where the hero faces instead.
+        if PadSteer::steering(pad.as_deref()).is_some() {
+            return None;
+        }
         let cursor = windows.single().ok()?.cursor_position()?;
         let (cam, tf) = cams.single().ok()?;
         let ray = cam
@@ -195,18 +265,24 @@ pub(super) fn drive_hero(
     aim: Res<AimPoint>,
     world: WorldPoint,
     auto: Option<Res<super::auto::Auto>>,
+    pad: Option<Res<PadSteer>>,
     mut player: ResMut<crate::player::Player>,
     mut hero: Query<(&mut Transform, &mut MovementState, &mut Hero)>,
 ) {
     let focus = match hero.single_mut() {
         Ok((mut tf, mut mv, mut hm)) => {
             let dt = time.delta_secs();
+            let pad = PadSteer::steering(pad.as_deref());
             let mut dir = Vec3::ZERO;
             if let Some(auto) = auto
                 .as_deref()
                 .filter(|_| *phase.get() == Phase::Playing && run.dead_t.is_none())
             {
                 dir = super::auto::steer(auto);
+            } else if let Some(pad) =
+                pad.filter(|_| *phase.get() == Phase::Playing && run.dead_t.is_none())
+            {
+                dir = stick_to_ground(pad.walk, rig.yaw);
             } else if *phase.get() == Phase::Playing && run.dead_t.is_none() {
                 if keys.any_pressed([KeyCode::KeyW, KeyCode::ArrowUp]) {
                     dir.z -= 1.0;
@@ -228,12 +304,18 @@ pub(super) fn drive_hero(
             }
             let mut pos = tf.translation;
             // Locked, the hero faces the cursor and WASD moves him under it, so he backpedals and
-            // strafes as a player does; unlocked (or driven), he faces where he runs.
+            // strafes as a player does; unlocked (or driven), he faces where he runs. On the pad he
+            // faces the right stick while it is held (twin-stick), else where he runs.
             let face = (rig.mode == CamMode::Fixed
                 && auto.is_none()
                 && *phase.get() == Phase::Playing
                 && run.dead_t.is_none())
-            .then(|| aim.0.map(|a| flat(a - pos)))
+            .then(|| match pad {
+                Some(pad) => {
+                    (pad.look != Vec2::ZERO).then(|| stick_to_ground(pad.look.normalize(), rig.yaw))
+                }
+                None => aim.0.map(|a| flat(a - pos)),
+            })
             .flatten()
             .filter(|d| d.length() > 0.5)
             .map(|d| d.normalize());
@@ -325,6 +407,8 @@ pub(super) fn place_camera(
     keys: Res<ButtonInput<KeyCode>>,
     player: Res<crate::player::Player>,
     world: WorldPoint,
+    collide: benilla_world::collision::WorldCollision,
+    pad: Option<Res<PadSteer>>,
     hero: Query<&Transform, (With<Hero>, Without<WorldCamera>)>,
     mut cams: Query<&mut Transform, With<WorldCamera>>,
 ) {
@@ -335,7 +419,7 @@ pub(super) fn place_camera(
             CamMode::Fixed => CamMode::Orbit,
             CamMode::Orbit => {
                 rig.yaw = 0.0;
-                rig.pitch = FIXED_PITCH;
+                rig.pitch = rig.fixed_pitch;
                 CamMode::Fixed
             }
         };
@@ -365,10 +449,48 @@ pub(super) fn place_camera(
             rig.yaw -= motion.delta.x * ORBIT_RATE;
             rig.pitch = (rig.pitch + motion.delta.y * ORBIT_RATE).clamp(PITCH_MIN, PITCH_MAX);
         }
+        // The right stick does the same, as in a console third-person game: right swings the
+        // camera right, up tilts it toward the horizon.
+        if let Some(pad) = PadSteer::steering(pad.as_deref()).filter(|_| rig.mode == CamMode::Orbit)
+        {
+            let dt = time.delta_secs();
+            rig.yaw -= pad.look.x * STICK_YAW_RATE * dt;
+            rig.pitch =
+                (rig.pitch - pad.look.y * STICK_PITCH_RATE * dt).clamp(PITCH_MIN, PITCH_MAX);
+        }
         let (sy, cy) = rig.yaw.sin_cos();
         let (sp, cp) = rig.pitch.sin_cos();
-        let look = focus + Vec3::Y * 1.4;
+        // Pad-steered, the view eases a few yards ahead of a running hero, to see what he runs
+        // into; with the mouse it stays centred, so the cursor's aim stays put under the hand.
+        let dt = time.delta_secs();
+        let step = rig.last_focus.map_or(Vec3::ZERO, |last| flat(focus - last));
+        rig.last_focus = Some(focus);
+        let want = if PadSteer::steering(pad.as_deref()).is_some()
+            && *phase.get() == Phase::Playing
+            && step.length() < LEAD_JUMP_YD
+        {
+            step.normalize_or_zero() * LEAD_YD
+        } else {
+            Vec3::ZERO
+        };
+        if dt > 0.0 {
+            rig.lead = rig.lead.lerp(want, 1.0 - (-LEAD_RATE * dt).exp());
+        }
+        let look = focus + rig.lead + Vec3::Y * 1.4;
         let mut eye = look + Vec3::new(cp * sy, sp, cp * cy) * rig.dist;
+        // The client camera's sweep from the hero's shoulders out to the seat: a tree, a wall or a
+        // hill between them pulls the camera in front of it (snapping in, easing back out), so the
+        // hero is never hidden behind one.
+        let boom = eye - look;
+        let len = boom.length().max(1.0e-3);
+        let open = collide.cast_camera(look, boom, false).unwrap_or(len);
+        let pull = match rig.pull {
+            Some(p) if open >= p => p + (open - p) * (1.0 - (-PULL_RETURN_RATE * dt).exp()),
+            _ => open,
+        }
+        .min(len);
+        rig.pull = Some(pull);
+        eye = look + boom * (pull / len);
         // Never under the ground: a low tilt on a slope would bury the lens.
         if let Some(h) = world.terrain_height_under(eye) {
             eye.y = eye.y.max(h + 0.6);
@@ -379,6 +501,36 @@ pub(super) fn place_camera(
     for mut cam in &mut cams {
         *cam = placed;
     }
+}
+
+/// The saved zoom, `benilla-config/survivors-camera.txt` (`localStorage` on the page): the
+/// camera distance in yards, kept across runs and restarts.
+fn zoom_path() -> Option<std::path::PathBuf> {
+    crate::local_state::home().map(|h| h.join("survivors-camera.txt"))
+}
+
+pub(super) fn restore_zoom(mut rig: ResMut<CamRig>) {
+    let Some(dist) = zoom_path()
+        .and_then(|p| crate::local_state::read_to_string(&p).ok())
+        .and_then(|t| t.trim().parse::<f32>().ok())
+        .filter(|d| d.is_finite())
+    else {
+        return;
+    };
+    rig.dist = dist.clamp(ZOOM_MIN, ZOOM_MAX);
+    rig.saved_dist = Some(rig.dist);
+}
+
+/// Leaving play (pause, level-up, the results) saves a changed zoom, so a held zoom key or
+/// shoulder button doesn't write every frame.
+pub(super) fn save_zoom(mut rig: ResMut<CamRig>) {
+    if rig.saved_dist == Some(rig.dist) {
+        return;
+    }
+    if let Some(path) = zoom_path() {
+        let _ = crate::local_state::write_atomic(&path, &format!("{:.2}", rig.dist));
+    }
+    rig.saved_dist = Some(rig.dist);
 }
 
 /// Damage the hero takes from one blow, after immunity, armour and the shield; returns what got

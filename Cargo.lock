@@ -607,6 +607,7 @@ dependencies = [
  "crossbeam-channel",
  "fontdb",
  "futures-lite",
+ "gilrs",
  "half",
  "image",
  "include_dir",

@@ -9,6 +9,8 @@ mod auto;
 mod cards;
 mod data;
 mod enemies;
+#[cfg(not(target_arch = "wasm32"))]
+mod gamepad;
 mod grade;
 mod hero;
 mod hud;
@@ -52,7 +54,8 @@ impl Plugin for SurvivorsPlugin {
             .add_message::<abilities::Hit>()
             .add_message::<enemies::Loot>()
             .add_plugins(bevy::ui_render::UiMaterialPlugin::<hud::SweepUiMaterial>::default())
-            .add_systems(Startup, hud::setup_hud)
+            .add_systems(Startup, (hud::setup_hud, hero::restore_zoom))
+            .add_systems(OnExit(Phase::Playing), hero::save_zoom)
             .add_systems(Update, hero::daylight)
             .add_systems(
                 Update,
@@ -133,6 +136,8 @@ impl Plugin for SurvivorsPlugin {
             .add_systems(OnEnter(Phase::Paused), pause)
             .add_systems(OnEnter(Phase::GameOver), unpause)
             .add_systems(OnEnter(Phase::Menu), (unpause, reset_run));
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_plugins(gamepad::plugin);
         if let Some(auto) = auto::from_env() {
             app.insert_resource(auto)
                 .add_systems(
