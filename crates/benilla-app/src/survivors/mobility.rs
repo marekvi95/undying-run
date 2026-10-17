@@ -227,8 +227,9 @@ pub(super) fn cast_mobility(
             tf.translation = to;
         }
         Move::Charge(yd) => {
-            // The enemy in reach nearest the cursor (or the hero, with none).
-            let mark = cursor.unwrap_or(pos);
+            // The enemy in reach nearest the cursor; with none (the pad steering), the one nearest a
+            // point halfway out ahead, so the charge goes where the hero faces.
+            let mark = cursor.unwrap_or(pos + toward * (yd * 0.5));
             let target = enemies
                 .iter()
                 .filter(|(_, t, e)| !e.dead && hero::reach(pos, t.translation) <= yd)

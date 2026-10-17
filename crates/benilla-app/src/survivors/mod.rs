@@ -12,8 +12,11 @@ mod enemies;
 #[cfg(not(target_arch = "wasm32"))]
 mod gamepad;
 mod grade;
+#[cfg(not(target_arch = "wasm32"))]
+mod handheld;
 mod hero;
 mod hud;
+mod locator;
 mod menu;
 mod minimap;
 mod mobility;
@@ -54,7 +57,10 @@ impl Plugin for SurvivorsPlugin {
             .add_message::<abilities::Hit>()
             .add_message::<enemies::Loot>()
             .add_plugins(bevy::ui_render::UiMaterialPlugin::<hud::SweepUiMaterial>::default())
-            .add_systems(Startup, (hud::setup_hud, hero::restore_zoom))
+            .add_systems(
+                Startup,
+                (hud::setup_hud, hero::restore_zoom, locator::setup),
+            )
             .add_systems(OnExit(Phase::Playing), hero::save_zoom)
             .add_systems(Update, hero::daylight)
             .add_systems(
@@ -64,6 +70,7 @@ impl Plugin for SurvivorsPlugin {
                     mobility::cast_mobility,
                     hero::drive_hero,
                     hero::place_camera,
+                    locator::place,
                 )
                     .chain()
                     .in_set(WorldStage::Input),
@@ -137,7 +144,7 @@ impl Plugin for SurvivorsPlugin {
             .add_systems(OnEnter(Phase::GameOver), unpause)
             .add_systems(OnEnter(Phase::Menu), (unpause, reset_run));
         #[cfg(not(target_arch = "wasm32"))]
-        app.add_plugins(gamepad::plugin);
+        app.add_plugins((gamepad::plugin, handheld::plugin));
         if let Some(auto) = auto::from_env() {
             app.insert_resource(auto)
                 .add_systems(
