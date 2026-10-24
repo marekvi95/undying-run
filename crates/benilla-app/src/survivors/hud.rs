@@ -526,6 +526,7 @@ pub(super) fn setup_hud(
             .with_children(|n| {
                 n.spawn((BannerText, centered(f, "", 30.0, GOLD)));
             });
+            continent::spawn_route(root, f);
             // The hero's health as a nameplate (`CGNamePlateFrame`): the bar under the border that
             // caps it, the level in the border's seat; [`hero_plate`] sizes and seats it.
             let absolute = || Node {

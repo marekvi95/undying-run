@@ -8,7 +8,8 @@ use bevy::prelude::*;
 
 use super::data::{self, EnemyDef, MapDef, Roster};
 use super::enemies::Enemy;
-use super::hero::Hero;
+use super::hero::{CamRig, Hero};
+use super::hud::{centered_bundle, GOLD_TONE};
 use super::units::{flat, wow_to_bevy};
 use super::Run;
 
@@ -33,6 +34,124 @@ const RUN_SPEED: f32 = 2.0;
 const STOP_RADIUS: f32 = 150.0;
 /// Horde further behind the hero than this is removed; the spawner keeps the horde ahead.
 const CULL_YD: f32 = 150.0;
+
+/// The pivot of the route needle, turned by [`show_route`].
+#[derive(Component)]
+pub(super) struct RouteNeedle;
+
+/// The route's readout under the needle: the next stop, how far, and the stops reached.
+#[derive(Component)]
+pub(super) struct RouteText;
+
+/// The route needle and its readout, a dial under the banner. A zero-size pivot at the dial's
+/// centre turns; its gold arrow points at the next stop, as the camera sees it.
+pub(super) fn spawn_route(root: &mut ChildSpawnerCommands, font: &Handle<Font>) {
+    let absolute = |left: f32, top: f32, w: f32, h: f32| Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(left),
+        top: Val::Px(top),
+        width: Val::Px(w),
+        height: Val::Px(h),
+        ..default()
+    };
+    root.spawn(Node {
+        position_type: PositionType::Absolute,
+        top: Val::Percent(30.0),
+        width: Val::Percent(100.0),
+        flex_direction: FlexDirection::Column,
+        align_items: AlignItems::Center,
+        row_gap: Val::Px(6.0),
+        ..default()
+    })
+    .with_children(|col| {
+        col.spawn(Node {
+            width: Val::Px(80.0),
+            height: Val::Px(80.0),
+            ..default()
+        })
+        .with_children(|dial| {
+            dial.spawn((
+                RouteNeedle,
+                absolute(40.0, 40.0, 0.0, 0.0),
+                UiTransform::default(),
+                Visibility::Hidden,
+            ))
+            .with_children(|pivot| {
+                pivot.spawn((absolute(-2.0, -30.0, 4.0, 30.0), BackgroundColor(GOLD_TONE)));
+                pivot.spawn((
+                    absolute(-6.0, -38.0, 12.0, 12.0),
+                    BackgroundColor(GOLD_TONE),
+                ));
+                pivot.spawn((
+                    absolute(-3.0, -3.0, 6.0, 6.0),
+                    BackgroundColor(Color::WHITE),
+                ));
+            });
+        });
+        col.spawn((
+            RouteText,
+            centered_bundle(font, "", 16.0, GOLD_TONE),
+            Visibility::Hidden,
+        ));
+    });
+}
+
+/// The clockwise angle, from straight up the screen, of the flat direction `to` as the camera at
+/// `yaw` sees it. `place_camera` sits the camera at `yaw` around the hero, looking back at him.
+pub(super) fn screen_bearing(yaw: f32, to: Vec3) -> f32 {
+    let (sy, cy) = yaw.sin_cos();
+    // Forward and right on the ground, as (x, z).
+    let forward = Vec2::new(-sy, -cy);
+    let right = Vec2::new(cy, -sy);
+    let d = Vec2::new(to.x, to.z).normalize_or_zero();
+    d.dot(right).atan2(d.dot(forward))
+}
+
+/// Turns the needle to the next stop and words the readout. Both hide off a route, once it is
+/// walked, and while the hero is down.
+pub(super) fn show_route(
+    run: Res<Run>,
+    rig: Res<CamRig>,
+    hero: Query<&Transform, With<Hero>>,
+    mut needles: Query<
+        (&mut UiTransform, &mut Visibility),
+        (With<RouteNeedle>, Without<RouteText>),
+    >,
+    mut labels: Query<(&mut Text, &mut Visibility), (With<RouteText>, Without<RouteNeedle>)>,
+) {
+    let aim = match (run.route, hero.single()) {
+        (Some(route), Ok(h)) if run.dead_t.is_none() => route
+            .get(run.stops)
+            .map(|&zone| (zone, flat(h.translation))),
+        _ => None,
+    };
+    let Some((zone, at)) = aim else {
+        for (_, mut vis) in &mut needles {
+            *vis = Visibility::Hidden;
+        }
+        for (_, mut vis) in &mut labels {
+            *vis = Visibility::Hidden;
+        }
+        return;
+    };
+    let to = flat(zone_centre(zone) - at);
+    let zones = run.route.map_or(0, <[&str]>::len);
+    for (mut tf, mut vis) in &mut needles {
+        tf.rotation = Rot2::radians(screen_bearing(rig.yaw, to));
+        *vis = Visibility::Inherited;
+    }
+    for (mut text, mut vis) in &mut labels {
+        let line = format!(
+            "Next: {zone} · {:.0} yd · {} of {zones} zones",
+            to.length(),
+            run.stops
+        );
+        if text.0 != line {
+            text.0 = line;
+        }
+        *vis = Visibility::Inherited;
+    }
+}
 
 /// The route a map starts, if it is a continent run.
 pub(super) fn route_of(map: &MapDef) -> Option<&'static [&'static str]> {
@@ -221,6 +340,20 @@ mod tests {
                 assert!(from_start < start.leash, "{zone} lies beyond the leash");
             }
         }
+    }
+
+    #[test]
+    fn needle_turns_with_the_camera() {
+        use std::f32::consts::FRAC_PI_2;
+        assert!(screen_bearing(0.0, -Vec3::Z).abs() < 1e-5, "ahead");
+        assert!(
+            (screen_bearing(0.0, Vec3::X) - FRAC_PI_2).abs() < 1e-5,
+            "to the right"
+        );
+        assert!(
+            screen_bearing(FRAC_PI_2, -Vec3::X).abs() < 1e-5,
+            "ahead after a turn"
+        );
     }
 
     #[test]

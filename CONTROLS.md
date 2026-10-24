@@ -42,11 +42,12 @@ preview hero. Your race, gender, class and zone are remembered across reloads.
 | Playing / paused | **+ / Start** | pause / resume |
 | Paused / game over | **− / Select** | quit the game |
 
-With a pad connected the camera starts closer (20 yd) and lower (50°) for a handheld screen, and
-while the pad steers it eases a few yards ahead of where the hero runs. It pulls in front of
-walls and hills like the client camera, and a gold ring on the ground marks the hero through
-anything that still covers him. The zoom, by wheel or **L / R**, is remembered across runs and
-restarts.
+The camera is the same with a pad as with the mouse: locked, it sits at a fixed 61° tilt, and the
+zoom is by wheel or **L / R**. While the right stick steers, the view eases a few yards ahead of
+where the hero runs.
+
+On a continent run, a gold needle under the banner points at the next zone as the camera sees it,
+with the distance to that zone and the number of stops reached.
 
 The run pauses itself when the pad drops out or the machine sleeps, and the pad rumbles when the
 hero is hit (where the controller supports it).
