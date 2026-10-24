@@ -17,7 +17,6 @@ mod grade;
 mod handheld;
 mod hero;
 mod hud;
-mod locator;
 mod menu;
 mod minimap;
 mod mobility;
@@ -58,11 +57,7 @@ impl Plugin for SurvivorsPlugin {
             .add_message::<abilities::Hit>()
             .add_message::<enemies::Loot>()
             .add_plugins(bevy::ui_render::UiMaterialPlugin::<hud::SweepUiMaterial>::default())
-            .add_systems(
-                Startup,
-                (hud::setup_hud, hero::restore_zoom, locator::setup),
-            )
-            .add_systems(OnExit(Phase::Playing), hero::save_zoom)
+            .add_systems(Startup, hud::setup_hud)
             .add_systems(Update, hero::daylight)
             .add_systems(
                 Update,
@@ -71,7 +66,6 @@ impl Plugin for SurvivorsPlugin {
                     mobility::cast_mobility,
                     hero::drive_hero,
                     hero::place_camera,
-                    locator::place,
                 )
                     .chain()
                     .in_set(WorldStage::Input),

@@ -44,7 +44,7 @@ use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use super::hero::{CamRig, PadSteer};
+use super::hero::PadSteer;
 use super::{Phase, Run};
 
 /// Stick deflection below which a stick is treated as at rest. The Switch Lite's left stick rests
@@ -63,7 +63,7 @@ pub(super) fn plugin(app: &mut App) {
         .init_resource::<PadSteer>()
         .add_systems(
             PreUpdate,
-            (tune_camera, auto_pause, drive_gamepad, nav::navigate)
+            (auto_pause, drive_gamepad, nav::navigate)
                 .chain()
                 .after(bevy::input::InputSystems)
                 // The virtual click and cursor reach bevy_ui's hover/press pass the same frame.
@@ -219,15 +219,6 @@ fn drive_gamepad(
                 window: window_entity,
             });
         }
-    }
-}
-
-/// The first pad to connect switches the camera to the handheld view ([`CamRig::tune_for_pad`]),
-/// once: after that the player's own zoom and tilt stand.
-fn tune_camera(added: Query<(), Added<Gamepad>>, mut rig: ResMut<CamRig>, mut done: Local<bool>) {
-    if !*done && !added.is_empty() {
-        *done = true;
-        rig.tune_for_pad();
     }
 }
 

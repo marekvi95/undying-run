@@ -46,9 +46,6 @@ const LEAD_YD: f32 = 4.0;
 const LEAD_RATE: f32 = 2.5;
 /// A hero step longer than this in one frame is a blink or a respawn, not a run.
 const LEAD_JUMP_YD: f32 = 3.0;
-/// How fast (1/s) the camera eases back out once whatever pulled it in clears: the client
-/// camera's `CAM_RETURN_RATE`.
-const PULL_RETURN_RATE: f32 = 6.0;
 /// Wheel zoom range, yards from the hero's shoulders.
 const ZOOM_MIN: f32 = 1.5;
 const ZOOM_MAX: f32 = 70.0;
@@ -72,28 +69,9 @@ pub(super) struct CamRig {
     /// Elevation above the horizon (radians), clamped so the camera never dives underground.
     pub pitch: f32,
     pub mode: CamMode,
-    /// The tilt locking the camera snaps back to; the pad tunes it lower ([`CamRig::tune_for_pad`]).
-    pub fixed_pitch: f32,
-    /// The zoom last saved to `survivors-camera.txt`, `None` with nothing saved.
-    pub saved_dist: Option<f32>,
     /// The camera's eased look-ahead on the ground, and the hero's last focus it is measured from.
     lead: Vec3,
     last_focus: Option<Vec3>,
-    /// The collision-held boom length, yards; `None` until the first sweep.
-    pull: Option<f32>,
-}
-
-impl CamRig {
-    /// Closer and lower than the laptop view, for a handheld's small screen; a saved zoom wins.
-    pub(super) fn tune_for_pad(&mut self) {
-        self.fixed_pitch = 50.0_f32.to_radians();
-        if self.mode == CamMode::Fixed {
-            self.pitch = self.fixed_pitch;
-        }
-        if self.saved_dist.is_none() {
-            self.dist = 20.0;
-        }
-    }
 }
 
 impl Default for CamRig {
@@ -104,11 +82,8 @@ impl Default for CamRig {
             yaw: 0.0,
             pitch: FIXED_PITCH,
             mode: CamMode::Fixed,
-            fixed_pitch: FIXED_PITCH,
-            saved_dist: None,
             lead: Vec3::ZERO,
             last_focus: None,
-            pull: None,
         }
     }
 }
@@ -404,28 +379,25 @@ pub(super) fn place_camera(
     keys: Res<ButtonInput<KeyCode>>,
     player: Res<crate::player::Player>,
     world: WorldPoint,
-    collide: benilla_world::collision::WorldCollision,
     pad: Option<Res<PadSteer>>,
     hero: Query<&Transform, (With<Hero>, Without<WorldCamera>)>,
     mut cams: Query<&mut Transform, With<WorldCamera>>,
-    mut debug: Local<Option<bool>>,
-    mut debug_at: Local<DebugAt>,
 ) {
     // `C` unlocks the camera to swing and tilt; locking it again snaps back to the top-down view,
     // so world-relative WASD lines up with the screen again. A locked view the right stick has
     // swung snaps back first, so on the pad it is the recentre button.
     if keys.just_pressed(KeyCode::KeyC) {
-        let swung = rig.yaw != 0.0 || rig.pitch != rig.fixed_pitch;
+        let swung = rig.yaw != 0.0 || rig.pitch != FIXED_PITCH;
         rig.mode = match rig.mode {
             CamMode::Fixed if swung => {
                 rig.yaw = 0.0;
-                rig.pitch = rig.fixed_pitch;
+                rig.pitch = FIXED_PITCH;
                 CamMode::Fixed
             }
             CamMode::Fixed => CamMode::Orbit,
             CamMode::Orbit => {
                 rig.yaw = 0.0;
-                rig.pitch = rig.fixed_pitch;
+                rig.pitch = FIXED_PITCH;
                 CamMode::Fixed
             }
         };
@@ -483,34 +455,6 @@ pub(super) fn place_camera(
         }
         let look = focus + rig.lead + Vec3::Y * 1.4;
         let mut eye = look + Vec3::new(cp * sy, sp, cp * cy) * rig.dist;
-        // The client camera's sweep from the hero's shoulders out to the seat: a tree, a wall or a
-        // hill between them pulls the camera in front of it (snapping in, easing back out), so the
-        // hero is never hidden behind one.
-        let boom = eye - look;
-        let len = boom.length().max(1.0e-3);
-        let open = collide.cast_camera(look, boom, false).unwrap_or(len);
-        let pull = match rig.pull {
-            Some(p) if open >= p => p + (open - p) * (1.0 - (-PULL_RETURN_RATE * dt).exp()),
-            _ => open,
-        }
-        .min(len);
-        rig.pull = Some(pull);
-        eye = look + boom * (pull / len);
-        if *debug.get_or_insert_with(|| std::env::var_os("SURVIVORS_CAM_DEBUG").is_some()) {
-            let now = time.elapsed_secs();
-            if now >= debug_at.0 {
-                debug_at.0 = now + 1.0;
-                info!(
-                    "camera: zoom {:.1} yd, held at {pull:.1} (sweep open {open:.1}), yaw {:.2}, \
-                     pitch {:.2}, lead {:.1}, pad {:?}",
-                    rig.dist,
-                    rig.yaw,
-                    rig.pitch,
-                    rig.lead.length(),
-                    pad.as_deref().map(|p| (p.active, p.walk, p.look)),
-                );
-            }
-        }
         // Never under the ground: a low tilt on a slope would bury the lens.
         if let Some(h) = world.terrain_height_under(eye) {
             eye.y = eye.y.max(h + 0.6);
@@ -522,40 +466,6 @@ pub(super) fn place_camera(
         *cam = placed;
     }
 }
-
-/// The saved zoom, `benilla-config/survivors-camera.txt` (`localStorage` on the page): the
-/// camera distance in yards, kept across runs and restarts.
-fn zoom_path() -> Option<std::path::PathBuf> {
-    crate::local_state::home().map(|h| h.join("survivors-camera.txt"))
-}
-
-pub(super) fn restore_zoom(mut rig: ResMut<CamRig>) {
-    let Some(dist) = zoom_path()
-        .and_then(|p| crate::local_state::read_to_string(&p).ok())
-        .and_then(|t| t.trim().parse::<f32>().ok())
-        .filter(|d| d.is_finite())
-    else {
-        return;
-    };
-    rig.dist = dist.clamp(ZOOM_MIN, ZOOM_MAX);
-    rig.saved_dist = Some(rig.dist);
-}
-
-/// Leaving play (pause, level-up, the results) saves a changed zoom, so a held zoom key or
-/// shoulder button doesn't write every frame.
-pub(super) fn save_zoom(mut rig: ResMut<CamRig>) {
-    if rig.saved_dist == Some(rig.dist) {
-        return;
-    }
-    if let Some(path) = zoom_path() {
-        let _ = crate::local_state::write_atomic(&path, &format!("{:.2}", rig.dist));
-    }
-    rig.saved_dist = Some(rig.dist);
-}
-
-/// When `SURVIVORS_CAM_DEBUG` next logs the rig, real seconds.
-#[derive(Default)]
-pub(super) struct DebugAt(f32);
 
 /// Damage the hero takes from one blow, after immunity, armour and the shield; returns what got
 /// through.
