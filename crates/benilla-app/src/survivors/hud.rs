@@ -11,6 +11,7 @@ use bevy::shader::ShaderRef;
 use bevy::ui_render::ui_material::{MaterialNode, UiMaterial};
 use bevy::window::PrimaryWindow;
 
+use super::continent;
 use super::data::{self, AbilityDef, Effect, Kind, PassiveDef, Stat};
 use super::hero::{self, Hero};
 use super::minimap::{self, MiniMap};
@@ -923,6 +924,8 @@ pub(super) fn start_run(run: &mut Run, selection: &mut Selection) -> bool {
     });
     run.hp = run.stats().max_hp;
     run.version += 1;
+    run.route = continent::route_of(selection.stage_def());
+    continent::begin(run);
     true
 }
 

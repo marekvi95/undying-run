@@ -1947,6 +1947,18 @@ pub(crate) static MAPS: &[MapDef] = &[
             foe("Kel'Thuzad", 15945, 63, 4.4, 2.1),
         ],
     },
+    // A continent run: the zones on its route (see `continent::ROUTES`) supply the horde. Last, so
+    // the saved map picks keep their indices. Starts at Westfall; the leash covers Naxxramas.
+    MapDef {
+        name: "Eastern Kingdoms Run",
+        zone: "Eastern Kingdoms",
+        map: 0,
+        center: [-10252.2, 1483.5, 41.6],
+        leash: 14700.0,
+        victory: "You crossed the Eastern Kingdoms.",
+        foes: &[],
+        bosses: &[],
+    },
 ];
 
 /// A battleground's horde and bosses with their numbers.

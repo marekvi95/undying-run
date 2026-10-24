@@ -7,6 +7,7 @@
 mod abilities;
 mod auto;
 mod cards;
+mod continent;
 mod data;
 mod enemies;
 #[cfg(not(target_arch = "wasm32"))]
@@ -78,6 +79,8 @@ impl Plugin for SurvivorsPlugin {
             .add_systems(
                 Update,
                 (
+                    continent::track_route,
+                    continent::cull_behind,
                     enemies::spawn_enemies,
                     enemies::move_enemies,
                     abilities::cast_abilities,
@@ -282,6 +285,12 @@ pub(super) struct Run {
     pub version: u32,
     /// A centre-screen announcement and its seconds left.
     pub banner: Option<(String, f32)>,
+    /// The continent run's zones in order ([`continent::ROUTES`]), or `None` for a battleground.
+    pub route: Option<&'static [&'static str]>,
+    /// Route stops reached, counting the starting zone; the run ends once all are reached.
+    pub stops: usize,
+    /// The share of the route walked, once the route is started.
+    pub route_frac: f32,
 }
 
 impl Default for Run {
@@ -314,6 +323,9 @@ impl Default for Run {
             damage_done: 0.0,
             version: 0,
             banner: None,
+            route: None,
+            stops: 1,
+            route_frac: 0.0,
         }
     }
 }

@@ -8,6 +8,7 @@ use benilla_world::world_point::WorldPoint;
 use bevy::prelude::*;
 
 use super::abilities::Hit;
+use super::continent;
 use super::data::{self, EnemyDef};
 use super::hero::{self, Hero, HERO_RADIUS};
 use super::units::{self, flat, yaw_toward, Fx, Marks, UnitSpec, COLOR_HURT};
@@ -101,7 +102,7 @@ fn spawn_enemy(
     hero: Vec3,
     boss: bool,
 ) {
-    let scale = data::hp_scale(run.elapsed);
+    let scale = data::hp_scale(run.pace());
     let serial = run.guid();
     let e = units::spawn_unit(
         commands,
@@ -125,7 +126,7 @@ fn spawn_enemy(
             hp,
             max_hp: hp,
             speed: def.speed,
-            damage: def.damage * data::damage_scale(run.elapsed),
+            damage: def.damage * data::damage_scale(run.pace()),
             radius: radius_for(def),
             xp: def.xp,
             boss,
@@ -149,8 +150,17 @@ fn ground(world: &WorldPoint, mut p: Vec3, fallback: f32) -> Vec3 {
     p
 }
 
+/// The boss owed now. A battleground's come on the clock; a route's come as each zone is entered.
+fn owed_boss(run: &Run, roster: &'static data::Roster, elapsed: f32) -> Option<&'static EnemyDef> {
+    if run.route.is_some() {
+        return continent::next_boss(run);
+    }
+    let due = ((elapsed / data::BOSS_EVERY_SECS) as usize).min(roster.bosses.len());
+    ((run.bosses as usize) < due).then(|| &roster.bosses[run.bosses as usize])
+}
+
 /// Keep the horde topped up on a ring outside the view, with the bosses and the encircling waves
-/// on the clock.
+/// on the clock. On a route the horde spawns ahead, toward the next stop.
 pub(super) fn spawn_enemies(
     mut commands: Commands,
     time: Res<Time>,
@@ -167,14 +177,15 @@ pub(super) fn spawn_enemies(
         return;
     }
     let hpos = h.translation;
-    let elapsed = run.elapsed;
-    let roster = data::roster(selection.map);
+    let elapsed = run.pace();
+    let roster = continent::roster_for(&run, selection.map);
     let pool = data::wave_pool(elapsed, roster.enemies.len());
 
-    let due_bosses = ((elapsed / data::BOSS_EVERY_SECS) as u32).min(roster.bosses.len() as u32);
-    while run.bosses < due_bosses {
-        let def = &roster.bosses[run.bosses as usize];
-        let a = rng.range(0.0, std::f32::consts::TAU);
+    while let Some(def) = owed_boss(&run, roster, elapsed) {
+        let a = match continent::heading(&run, hpos) {
+            Some(a) => a,
+            None => rng.range(0.0, std::f32::consts::TAU),
+        };
         let pos = ground(
             &world,
             hpos + Vec3::new(a.cos(), 0.0, a.sin()) * 30.0,
@@ -216,7 +227,10 @@ pub(super) fn spawn_enemies(
     let n = (((target - alive) as f32) / 6.0).ceil().min(4.0) as usize;
     for _ in 0..n {
         let def = &roster.enemies[pool[rng.index(pool.len())]];
-        let a = rng.range(0.0, std::f32::consts::TAU);
+        let a = match continent::heading(&run, hpos) {
+            Some(ahead) => ahead + rng.range(-1.0, 1.0),
+            None => rng.range(0.0, std::f32::consts::TAU),
+        };
         let r = rng.range(34.0, 42.0);
         let pos = ground(&world, hpos + Vec3::new(a.cos(), 0.0, a.sin()) * r, hpos.y);
         spawn_enemy(&mut commands, &mut run, def, pos, hpos, false);

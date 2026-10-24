@@ -322,7 +322,7 @@ pub(super) fn drive_hero(
             }
             if dir != Vec3::ZERO && dt > 0.0 {
                 let dir = dir.normalize();
-                let speed = run.stats().speed * run.haste_mult();
+                let speed = run.stats().speed * run.haste_mult() * run.run_speed();
                 pos += dir * speed * dt;
                 mv.speed = speed;
                 mv.flags = match face {
@@ -637,7 +637,7 @@ pub(super) fn hero_vitals(
         units::kill_unit(&mut store);
         marks.clear();
         marks.flush(entity, guid.0, &mut store, &mut fields);
-    } else if run.elapsed >= data::VICTORY_SECS {
+    } else if run.finished() {
         run.won = true;
         // A last flourish before the results.
         fx.cast(entity, 642, &[entity], None);
