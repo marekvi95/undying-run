@@ -8,13 +8,13 @@
 //!
 //! | Pad | Does the same as |
 //! |---|---|
-//! | Left stick, D-pad (play) | [`PadSteer::walk`]: analog movement, the hero faces where he runs |
-//! | Right stick (play) | [`PadSteer::look`]: locked camera, the hero faces it; unlocked, it swings the camera |
+//! | Left stick, D-pad (play) | [`PadSteer::walk`]: camera-relative movement, the hero faces the run |
+//! | Right stick (play) | [`PadSteer::look`]: swing and tilt the camera |
 //! | D-pad, left stick (outside play) | [`nav`]: jump the cursor to the next button that way |
 //! | Right stick (outside play) | moving the mouse freely |
 //! | South (B) | `Space`, jump |
 //! | East (A) | `F`, the class mobility spell; click in menus |
-//! | North | `C`, the camera lock/unlock |
+//! | North | `C`: recentre a swung camera (else the lock/unlock) |
 //! | Start | `Escape`, pause; `Enter` at the menu, Enter World |
 //! | Select (−), paused or results | quit the game |
 //! | Left / right shoulder | the mouse wheel, zoom out / in |
@@ -47,13 +47,14 @@ use bevy::window::PrimaryWindow;
 use super::hero::{CamRig, PadSteer};
 use super::{Phase, Run};
 
-/// Stick deflection below which a stick is treated as at rest.
-const DEADZONE: f32 = 0.2;
+/// Stick deflection below which a stick is treated as at rest. The Switch Lite's left stick rests
+/// as far as 0.16 off centre and drifts past that, so this is wide.
+const DEADZONE: f32 = 0.3;
 /// The virtual cursor's speed at full stick deflection, logical pixels a second.
 const CURSOR_SPEED: f32 = 1200.0;
-/// Wheel notches a second at full shoulder-button hold (`MouseScrollUnit::Line`, as a real wheel
-/// sends).
-const ZOOM_RATE: f32 = 3.0;
+/// Wheel notches a second while a shoulder button is held (`MouseScrollUnit::Line`, as a real
+/// wheel sends), on top of the one notch a press sends at once, so a tap zooms a visible step.
+const ZOOM_RATE: f32 = 8.0;
 /// A frame longer than this, in real seconds, was a suspend (or a stall as bad): pause the run.
 const SLEPT_SECS: f32 = 1.0;
 
@@ -200,22 +201,24 @@ fn drive_gamepad(
     }
 
     // ── Shoulder buttons: the mouse wheel, zoom out / in. ──
-    let notches = ZOOM_RATE * time.delta_secs();
-    if pad.pressed(GamepadButton::LeftTrigger) {
-        wheel.write(MouseWheel {
-            unit: MouseScrollUnit::Line,
-            x: 0.0,
-            y: -notches,
-            window: window_entity,
-        });
-    }
-    if pad.pressed(GamepadButton::RightTrigger) {
-        wheel.write(MouseWheel {
-            unit: MouseScrollUnit::Line,
-            x: 0.0,
-            y: notches,
-            window: window_entity,
-        });
+    for (button, sign) in [
+        (GamepadButton::LeftTrigger, -1.0),
+        (GamepadButton::RightTrigger, 1.0),
+    ] {
+        let mut notches = 0.0;
+        if pad.just_pressed(button) {
+            notches += 1.0;
+        } else if pad.pressed(button) {
+            notches += ZOOM_RATE * time.delta_secs();
+        }
+        if notches > 0.0 {
+            wheel.write(MouseWheel {
+                unit: MouseScrollUnit::Line,
+                x: 0.0,
+                y: sign * notches,
+                window: window_entity,
+            });
+        }
     }
 }
 

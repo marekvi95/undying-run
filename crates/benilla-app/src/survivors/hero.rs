@@ -39,8 +39,9 @@ const PITCH_MIN: f32 = 0.18;
 const PITCH_MAX: f32 = 1.45;
 /// The locked view's tilt.
 const FIXED_PITCH: f32 = 61.0 * std::f32::consts::PI / 180.0;
-/// How far ahead of a running hero the pad-steered camera looks, yards, and how fast (1/s) it
-/// eases toward that lead.
+/// How far ahead of a running hero the pad-steered camera looks, as a share of the zoom and at
+/// most yards, so a close camera never leads him off the screen; and how fast (1/s) it eases.
+const LEAD_SHARE: f32 = 0.15;
 const LEAD_YD: f32 = 4.0;
 const LEAD_RATE: f32 = 2.5;
 /// A hero step longer than this in one frame is a blink or a respawn, not a run.
@@ -120,7 +121,7 @@ pub(super) struct PadSteer {
     pub(super) active: bool,
     /// Unit run direction, or zero.
     pub(super) walk: Vec2,
-    /// The right stick, past its deadzone: aim with the camera locked, a camera swing unlocked.
+    /// The right stick, past its deadzone: the camera swing and tilt.
     pub(super) look: Vec2,
 }
 
@@ -296,26 +297,22 @@ pub(super) fn drive_hero(
                 if keys.any_pressed([KeyCode::KeyD, KeyCode::ArrowRight]) {
                     dir.x += 1.0;
                 }
-                // In orbit mode WASD is camera-relative; in fixed mode it stays world-relative.
-                if rig.mode == CamMode::Orbit {
+                // Camera-relative: the locked view's yaw is 0 (world-relative) unless the right
+                // stick has swung it.
+                {
                     let (sy, cy) = rig.yaw.sin_cos();
                     dir = Vec3::new(dir.x * cy + dir.z * sy, 0.0, dir.z * cy - dir.x * sy);
                 }
             }
             let mut pos = tf.translation;
             // Locked, the hero faces the cursor and WASD moves him under it, so he backpedals and
-            // strafes as a player does; unlocked (or driven), he faces where he runs. On the pad he
-            // faces the right stick while it is held (twin-stick), else where he runs.
+            // strafes as a player does; unlocked, driven or on the pad, he faces where he runs.
             let face = (rig.mode == CamMode::Fixed
                 && auto.is_none()
+                && pad.is_none()
                 && *phase.get() == Phase::Playing
                 && run.dead_t.is_none())
-            .then(|| match pad {
-                Some(pad) => {
-                    (pad.look != Vec2::ZERO).then(|| stick_to_ground(pad.look.normalize(), rig.yaw))
-                }
-                None => aim.0.map(|a| flat(a - pos)),
-            })
+            .then(|| aim.0.map(|a| flat(a - pos)))
             .flatten()
             .filter(|d| d.length() > 0.5)
             .map(|d| d.normalize());
@@ -411,11 +408,20 @@ pub(super) fn place_camera(
     pad: Option<Res<PadSteer>>,
     hero: Query<&Transform, (With<Hero>, Without<WorldCamera>)>,
     mut cams: Query<&mut Transform, With<WorldCamera>>,
+    mut debug: Local<Option<bool>>,
+    mut debug_at: Local<DebugAt>,
 ) {
     // `C` unlocks the camera to swing and tilt; locking it again snaps back to the top-down view,
-    // so world-relative WASD lines up with the screen again.
+    // so world-relative WASD lines up with the screen again. A locked view the right stick has
+    // swung snaps back first, so on the pad it is the recentre button.
     if keys.just_pressed(KeyCode::KeyC) {
+        let swung = rig.yaw != 0.0 || rig.pitch != rig.fixed_pitch;
         rig.mode = match rig.mode {
+            CamMode::Fixed if swung => {
+                rig.yaw = 0.0;
+                rig.pitch = rig.fixed_pitch;
+                CamMode::Fixed
+            }
             CamMode::Fixed => CamMode::Orbit,
             CamMode::Orbit => {
                 rig.yaw = 0.0;
@@ -449,10 +455,9 @@ pub(super) fn place_camera(
             rig.yaw -= motion.delta.x * ORBIT_RATE;
             rig.pitch = (rig.pitch + motion.delta.y * ORBIT_RATE).clamp(PITCH_MIN, PITCH_MAX);
         }
-        // The right stick does the same, as in a console third-person game: right swings the
-        // camera right, up tilts it toward the horizon.
-        if let Some(pad) = PadSteer::steering(pad.as_deref()).filter(|_| rig.mode == CamMode::Orbit)
-        {
+        // The right stick swings and tilts it in either mode, as in a console third-person game:
+        // right swings the camera right, up tilts it toward the horizon.
+        if let Some(pad) = PadSteer::steering(pad.as_deref()) {
             let dt = time.delta_secs();
             rig.yaw -= pad.look.x * STICK_YAW_RATE * dt;
             rig.pitch =
@@ -469,7 +474,7 @@ pub(super) fn place_camera(
             && *phase.get() == Phase::Playing
             && step.length() < LEAD_JUMP_YD
         {
-            step.normalize_or_zero() * LEAD_YD
+            step.normalize_or_zero() * (rig.dist * LEAD_SHARE).min(LEAD_YD)
         } else {
             Vec3::ZERO
         };
@@ -491,6 +496,21 @@ pub(super) fn place_camera(
         .min(len);
         rig.pull = Some(pull);
         eye = look + boom * (pull / len);
+        if *debug.get_or_insert_with(|| std::env::var_os("SURVIVORS_CAM_DEBUG").is_some()) {
+            let now = time.elapsed_secs();
+            if now >= debug_at.0 {
+                debug_at.0 = now + 1.0;
+                info!(
+                    "camera: zoom {:.1} yd, held at {pull:.1} (sweep open {open:.1}), yaw {:.2}, \
+                     pitch {:.2}, lead {:.1}, pad {:?}",
+                    rig.dist,
+                    rig.yaw,
+                    rig.pitch,
+                    rig.lead.length(),
+                    pad.as_deref().map(|p| (p.active, p.walk, p.look)),
+                );
+            }
+        }
         // Never under the ground: a low tilt on a slope would bury the lens.
         if let Some(h) = world.terrain_height_under(eye) {
             eye.y = eye.y.max(h + 0.6);
@@ -532,6 +552,10 @@ pub(super) fn save_zoom(mut rig: ResMut<CamRig>) {
     }
     rig.saved_dist = Some(rig.dist);
 }
+
+/// When `SURVIVORS_CAM_DEBUG` next logs the rig, real seconds.
+#[derive(Default)]
+pub(super) struct DebugAt(f32);
 
 /// Damage the hero takes from one blow, after immunity, armour and the shield; returns what got
 /// through.
