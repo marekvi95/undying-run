@@ -180,7 +180,6 @@ pub(super) fn cast_mobility(
     mut hero: Query<(Entity, &mut Transform), With<Hero>>,
     mut enemies: Query<(Entity, &Transform, &mut Enemy), Without<Hero>>,
     selection: Res<super::Selection>,
-    aim: Res<hero::AimPoint>,
     mut fx: Fx,
 ) {
     let dt = time.delta_secs();
@@ -200,10 +199,8 @@ pub(super) fn cast_mobility(
     };
     let pos = tf.translation;
     let facing = tf.rotation * Vec3::NEG_Z;
-    let facing = flat(facing).normalize_or(Vec3::NEG_Z);
-    // Aimed at the cursor where there is one, else straight ahead.
-    let cursor = aim.0.filter(|a| flat(*a - pos).length() > 0.5);
-    let toward = cursor.map_or(facing, |a| flat(a - pos).normalize());
+    // Mobility goes where the hero faces, the heading the camera follows.
+    let toward = flat(facing).normalize_or(Vec3::NEG_Z);
     // Keep any jump inside the battleground's leash.
     let map = selection.map_def();
     let center = hero::arena(map);
@@ -219,17 +216,15 @@ pub(super) fn cast_mobility(
     match def.kind {
         Move::Blink(yd) => {
             fx.cast(me, def.spell, &[me], None);
-            // To the cursor, or as far as the spell reaches toward it.
-            let far = cursor.map_or(yd, |a| flat(a - pos).length().min(yd));
             tf.rotation = Quat::from_rotation_y(super::units::yaw_toward(toward));
-            let mut to = leash(pos + toward * far);
+            let mut to = leash(pos + toward * yd);
             to.y = ground(to);
             tf.translation = to;
         }
         Move::Charge(yd) => {
-            // The enemy in reach nearest the cursor; with none (the pad steering), the one nearest a
-            // point halfway out ahead, so the charge goes where the hero faces.
-            let mark = cursor.unwrap_or(pos + toward * (yd * 0.5));
+            // The enemy in reach nearest a point halfway out ahead, so the charge goes where the
+            // hero faces.
+            let mark = pos + toward * (yd * 0.5);
             let target = enemies
                 .iter()
                 .filter(|(_, t, e)| !e.dead && hero::reach(pos, t.translation) <= yd)
@@ -240,7 +235,7 @@ pub(super) fn cast_mobility(
                     if let Ok((_, _, mut en)) = enemies.get_mut(e) {
                         en.stun_t = en.stun_t.max(def.secs);
                     }
-                    let dir = flat(at - pos).normalize_or(facing);
+                    let dir = flat(at - pos).normalize_or(toward);
                     tf.rotation = Quat::from_rotation_y(super::units::yaw_toward(dir));
                     fx.cast(me, def.spell, &[e], None);
                     at - dir * 1.5

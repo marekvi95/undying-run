@@ -1,8 +1,8 @@
 //! Gamepad play for Warcraft Survivors. 1.12.1 has no gamepad and this mode has no reference to
 //! match (`CONTROLS.md`); the pad instead drives the same keys, mouse cursor and wheel the
 //! keyboard and mouse already feed, so `hero`, `mobility`, `hud`, `menu` and `cards` need no pad
-//! code of their own, except that movement and facing in play go through [`PadSteer`] (a mouse
-//! cursor left wherever the right stick last put it made the hero backpedal away from it). A
+//! code of their own, except that movement and facing in play go through [`PadSteer`], which reads
+//! the sticks directly. A
 //! face-button click lands on whatever bevy_ui button the cursor sits over, the same path a real
 //! mouse click takes ([`Interaction`]); [`nav`] snaps the cursor from button to button.
 //!
@@ -14,7 +14,7 @@
 //! | Right stick (outside play) | moving the mouse freely |
 //! | South (B) | `Space`, jump |
 //! | East (A) | `F`, the class mobility spell; click in menus |
-//! | North | `C`: recentre a swung camera (else the lock/unlock) |
+//! | North | `C`: swing the camera back behind the hero and reset its tilt |
 //! | Start | `Escape`, pause; `Enter` at the menu, Enter World |
 //! | Select (−), paused or results | quit the game |
 //! | Left / right shoulder | the mouse wheel, zoom out / in |

@@ -49,7 +49,6 @@ impl Plugin for SurvivorsPlugin {
             .init_resource::<Selection>()
             .init_resource::<Run>()
             .init_resource::<hero::CamRig>()
-            .init_resource::<hero::AimPoint>()
             .init_resource::<abilities::PendingHits>()
             .init_resource::<enemies::Spawner>()
             .init_resource::<hud::Offer>()
@@ -62,7 +61,6 @@ impl Plugin for SurvivorsPlugin {
             .add_systems(
                 Update,
                 (
-                    hero::aim_cursor,
                     mobility::cast_mobility,
                     hero::drive_hero,
                     hero::place_camera,
