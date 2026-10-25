@@ -77,11 +77,17 @@ pub(super) fn spawn_route(root: &mut ChildSpawnerCommands, font: &Handle<Font>) 
                 Visibility::Hidden,
             ))
             .with_children(|pivot| {
-                pivot.spawn((absolute(-2.0, -30.0, 4.0, 30.0), BackgroundColor(GOLD_TONE)));
-                pivot.spawn((
-                    absolute(-6.0, -38.0, 12.0, 12.0),
-                    BackgroundColor(GOLD_TONE),
-                ));
+                pivot.spawn((absolute(-2.0, -26.0, 4.0, 26.0), BackgroundColor(GOLD_TONE)));
+                // The head: seven rows, each 2 px wider than the last, so the point reads as a
+                // solid triangle.
+                for row in 0..7 {
+                    let row = row as f32;
+                    let w = 2.0 + 2.0 * row;
+                    pivot.spawn((
+                        absolute(-w / 2.0, -40.0 + 2.0 * row, w, 2.0),
+                        BackgroundColor(GOLD_TONE),
+                    ));
+                }
                 pivot.spawn((
                     absolute(-3.0, -3.0, 6.0, 6.0),
                     BackgroundColor(Color::WHITE),
