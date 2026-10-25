@@ -4,13 +4,17 @@
 //! rather than fences: the hero may run anywhere on the continent, and the run is won at the last
 //! stop.
 
+use std::f32::consts::FRAC_PI_2;
+
+use bevy::light::NotShadowCaster;
+use bevy::mesh::ConeMeshBuilder;
 use bevy::prelude::*;
 
 use super::data::{self, EnemyDef, MapDef, Roster};
 use super::enemies::Enemy;
-use super::hero::{CamRig, Hero};
+use super::hero::Hero;
 use super::hud::{centered_bundle, GOLD_TONE};
-use super::units::{flat, wow_to_bevy};
+use super::units::{flat, wow_to_bevy, yaw_toward};
 use super::Run;
 
 /// The routes, by the name of the [`MapDef`] that starts them: zone names in order, each resolved
@@ -35,65 +39,28 @@ const STOP_RADIUS: f32 = 150.0;
 /// Horde further behind the hero than this is removed; the spawner keeps the horde ahead.
 const CULL_YD: f32 = 150.0;
 
-/// The pivot of the route needle, turned by [`show_route`].
-#[derive(Component)]
-pub(super) struct RouteNeedle;
-
-/// The route's readout under the needle: the next stop, how far, and the stops reached.
+/// The route's readout under the banner: the next stop, how far, and the stops reached.
 #[derive(Component)]
 pub(super) struct RouteText;
 
-/// The route needle and its readout, a dial under the banner. A zero-size pivot at the dial's
-/// centre turns; its gold arrow points at the next stop, as the camera sees it.
+/// The arrow over the hero, turned by [`show_route`] to the next stop.
+#[derive(Component)]
+pub(super) struct RouteArrow;
+
+/// How far above the hero's feet the arrow hovers, in yards.
+const ARROW_HOVER: f32 = 4.0;
+
+/// The route's readout, under the banner.
 pub(super) fn spawn_route(root: &mut ChildSpawnerCommands, font: &Handle<Font>) {
-    let absolute = |left: f32, top: f32, w: f32, h: f32| Node {
-        position_type: PositionType::Absolute,
-        left: Val::Px(left),
-        top: Val::Px(top),
-        width: Val::Px(w),
-        height: Val::Px(h),
-        ..default()
-    };
     root.spawn(Node {
         position_type: PositionType::Absolute,
         top: Val::Percent(30.0),
         width: Val::Percent(100.0),
         flex_direction: FlexDirection::Column,
         align_items: AlignItems::Center,
-        row_gap: Val::Px(6.0),
         ..default()
     })
     .with_children(|col| {
-        col.spawn(Node {
-            width: Val::Px(80.0),
-            height: Val::Px(80.0),
-            ..default()
-        })
-        .with_children(|dial| {
-            dial.spawn((
-                RouteNeedle,
-                absolute(40.0, 40.0, 0.0, 0.0),
-                UiTransform::default(),
-                Visibility::Hidden,
-            ))
-            .with_children(|pivot| {
-                pivot.spawn((absolute(-2.0, -26.0, 4.0, 26.0), BackgroundColor(GOLD_TONE)));
-                // The head: seven rows, each 2 px wider than the last, so the point reads as a
-                // solid triangle.
-                for row in 0..7 {
-                    let row = row as f32;
-                    let w = 2.0 + 2.0 * row;
-                    pivot.spawn((
-                        absolute(-w / 2.0, -40.0 + 2.0 * row, w, 2.0),
-                        BackgroundColor(GOLD_TONE),
-                    ));
-                }
-                pivot.spawn((
-                    absolute(-3.0, -3.0, 6.0, 6.0),
-                    BackgroundColor(Color::WHITE),
-                ));
-            });
-        });
         col.spawn((
             RouteText,
             centered_bundle(font, "", 16.0, GOLD_TONE),
@@ -102,37 +69,72 @@ pub(super) fn spawn_route(root: &mut ChildSpawnerCommands, font: &Handle<Font>) 
     });
 }
 
-/// The clockwise angle, from straight up the screen, of the flat direction `to` as the camera at
-/// `yaw` sees it. `place_camera` sits the camera at `yaw` around the hero, looking back at him.
-pub(super) fn screen_bearing(yaw: f32, to: Vec3) -> f32 {
-    let (sy, cy) = yaw.sin_cos();
-    // Forward and right on the ground, as (x, z).
-    let forward = Vec2::new(-sy, -cy);
-    let right = Vec2::new(cy, -sy);
-    let d = Vec2::new(to.x, to.z).normalize_or_zero();
-    d.dot(right).atan2(d.dot(forward))
+/// The arrow: a gold shaft and a four-sided head, three yards from tail to tip. Built once at
+/// startup and hidden until a route is walked; it is not a run entity, so it outlives the runs.
+pub(super) fn spawn_arrow(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let gold = materials.add(StandardMaterial {
+        base_color: GOLD_TONE,
+        unlit: true,
+        ..default()
+    });
+    let shaft = meshes.add(Cuboid::new(0.3, 0.3, 2.0));
+    // Four sides rather than a smooth cone, so the head reads as a point.
+    let head = meshes.add(
+        ConeMeshBuilder {
+            cone: Cone {
+                radius: 0.5,
+                height: 1.0,
+            },
+            resolution: 4,
+            ..default()
+        }
+        .build(),
+    );
+    commands
+        .spawn((RouteArrow, Transform::default(), Visibility::Hidden))
+        .with_children(|arrow| {
+            arrow.spawn((
+                Mesh3d(shaft),
+                MeshMaterial3d(gold.clone()),
+                Transform::from_xyz(0.0, 0.0, 0.5),
+                NotShadowCaster,
+            ));
+            // A cone points up its own Y; this turns the tip to the arrow's forward, -Z.
+            arrow.spawn((
+                Mesh3d(head),
+                MeshMaterial3d(gold),
+                Transform::from_xyz(0.0, 0.0, -1.0)
+                    .with_rotation(Quat::from_rotation_x(-FRAC_PI_2)),
+                NotShadowCaster,
+            ));
+        });
 }
 
-/// Turns the needle to the next stop and words the readout. Both hide off a route, once it is
-/// walked, and while the hero is down.
+/// The turn that points the arrow's tip along the ground toward `to`.
+fn arrow_turn(to: Vec3) -> Quat {
+    Quat::from_rotation_y(yaw_toward(flat(to)))
+}
+
+/// Hangs the arrow over the hero, turned to the next stop, and words the readout. Both hide off a
+/// route, once it is walked, and while the hero is down.
 pub(super) fn show_route(
     run: Res<Run>,
-    rig: Res<CamRig>,
     hero: Query<&Transform, With<Hero>>,
-    mut needles: Query<
-        (&mut UiTransform, &mut Visibility),
-        (With<RouteNeedle>, Without<RouteText>),
-    >,
-    mut labels: Query<(&mut Text, &mut Visibility), (With<RouteText>, Without<RouteNeedle>)>,
+    mut arrows: Query<(&mut Transform, &mut Visibility), (With<RouteArrow>, Without<Hero>)>,
+    mut labels: Query<(&mut Text, &mut Visibility), (With<RouteText>, Without<RouteArrow>)>,
 ) {
     let aim = match (run.route, hero.single()) {
-        (Some(route), Ok(h)) if run.dead_t.is_none() => route
-            .get(run.stops)
-            .map(|&zone| (zone, flat(h.translation))),
+        (Some(route), Ok(h)) if run.dead_t.is_none() => {
+            route.get(run.stops).map(|&zone| (zone, h.translation))
+        }
         _ => None,
     };
     let Some((zone, at)) = aim else {
-        for (_, mut vis) in &mut needles {
+        for (_, mut vis) in &mut arrows {
             *vis = Visibility::Hidden;
         }
         for (_, mut vis) in &mut labels {
@@ -142,9 +144,10 @@ pub(super) fn show_route(
     };
     let to = flat(zone_centre(zone) - at);
     let zones = run.route.map_or(0, <[&str]>::len);
-    for (mut tf, mut vis) in &mut needles {
-        tf.rotation = Rot2::radians(screen_bearing(rig.yaw, to));
-        *vis = Visibility::Inherited;
+    for (mut tf, mut vis) in &mut arrows {
+        tf.translation = at + Vec3::Y * ARROW_HOVER;
+        tf.rotation = arrow_turn(to);
+        *vis = Visibility::Visible;
     }
     for (mut text, mut vis) in &mut labels {
         let line = format!(
@@ -349,17 +352,16 @@ mod tests {
     }
 
     #[test]
-    fn needle_turns_with_the_camera() {
-        use std::f32::consts::FRAC_PI_2;
-        assert!(screen_bearing(0.0, -Vec3::Z).abs() < 1e-5, "ahead");
-        assert!(
-            (screen_bearing(0.0, Vec3::X) - FRAC_PI_2).abs() < 1e-5,
-            "to the right"
-        );
-        assert!(
-            screen_bearing(FRAC_PI_2, -Vec3::X).abs() < 1e-5,
-            "ahead after a turn"
-        );
+    fn arrow_points_at_the_next_stop() {
+        for to in [
+            Vec3::X,
+            -Vec3::Z,
+            Vec3::new(1.0, 9.0, -2.0),
+            Vec3::new(-3.0, 0.0, 4.0),
+        ] {
+            let tip = arrow_turn(to) * Vec3::NEG_Z;
+            assert!(tip.distance(flat(to).normalize()) < 1e-5, "{to:?}");
+        }
     }
 
     #[test]

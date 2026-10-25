@@ -56,7 +56,7 @@ impl Plugin for SurvivorsPlugin {
             .add_message::<abilities::Hit>()
             .add_message::<enemies::Loot>()
             .add_plugins(bevy::ui_render::UiMaterialPlugin::<hud::SweepUiMaterial>::default())
-            .add_systems(Startup, hud::setup_hud)
+            .add_systems(Startup, (hud::setup_hud, continent::spawn_arrow))
             .add_systems(Update, hero::daylight)
             .add_systems(
                 Update,
