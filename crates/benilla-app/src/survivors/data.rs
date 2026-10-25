@@ -1334,12 +1334,12 @@ pub(crate) fn target_alive(elapsed: f32) -> usize {
 
 /// Enemy health grows on top of the tiers, so a late kill takes several spells.
 pub(crate) fn hp_scale(elapsed: f32) -> f32 {
-    1.0 + progress(elapsed) * 0.75
+    1.0 + progress(elapsed) * 0.4
 }
 
 /// Enemy damage grows the same way.
 pub(crate) fn damage_scale(elapsed: f32) -> f32 {
-    1.0 + progress(elapsed) * 0.9
+    1.0 + progress(elapsed) * 0.5
 }
 
 /// The experience to go from `level` to the next: Vampire Survivors' curve, cheap early.

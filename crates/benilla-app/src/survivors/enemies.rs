@@ -425,6 +425,10 @@ pub(super) fn mark_dying(commands: &mut Commands, e: Entity) {
 
 /// Most gems on the ground at once; past it, a kill's worth joins an existing gem.
 const MAX_GEMS: usize = 350;
+/// The chance a kill drops a heal gem; a boss always drops one.
+const HEAL_DROP_CHANCE: f32 = 0.10;
+/// The share of max health a level-up restores.
+const LEVEL_HEAL: f32 = 0.10;
 
 pub(super) fn drop_loot(
     mut commands: Commands,
@@ -435,7 +439,7 @@ pub(super) fn drop_loot(
 ) {
     let mut count = gems.iter().count();
     for d in drops.read() {
-        if d.boss || rng.f32() < 0.015 {
+        if d.boss || rng.f32() < HEAL_DROP_CHANCE {
             let heal = GemKind::Heal(if d.boss { 1000.0 } else { 30.0 });
             spawn_gem(&mut commands, run.guid(), d.pos + Vec3::X * 0.8, heal);
         }
@@ -501,7 +505,7 @@ pub(super) fn collect_gems(
     while run.xp >= data::xp_to_next(run.level) {
         run.xp -= data::xp_to_next(run.level);
         run.level += 1;
-        run.pending_levels += 1;
+        run.hp = (run.hp + stats.max_hp * LEVEL_HEAL).min(stats.max_hp);
         if run.level == super::mobility::LEARN_LEVEL {
             if let Some(m) = super::mobility::for_class(run.class.id) {
                 run.banner = Some((format!("You have learned {}! Press F.", m.name), 4.0));
