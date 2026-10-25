@@ -50,7 +50,9 @@ and the zoom is by wheel or **L / R**. While the right stick steers, the view ea
 ahead of where the hero runs.
 
 On a continent run, a gold 3D arrow floats above the hero and points at the next zone along the
-ground, with the distance to that zone and the number of stops reached under the banner.
+ground, with the distance to that zone and the number of stops reached under the banner. The
+horde keeps pace with a hero running the road, and a heal gem lands near the hero every 12
+seconds (up to two on the ground), so healing does not wait on kills.
 
 The run pauses itself when the pad drops out or the machine sleeps, and the pad rumbles when the
 hero is hit (where the controller supports it).

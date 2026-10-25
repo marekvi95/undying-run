@@ -120,12 +120,17 @@ fn spawn_enemy(
         yaw_toward(hero - pos),
     );
     let hp = def.hp * scale;
+    let chase = if run.route.is_some() {
+        ROUTE_CHASE
+    } else {
+        1.0
+    };
     commands.entity(e).insert((
         Enemy {
             def,
             hp,
             max_hp: hp,
-            speed: def.speed,
+            speed: def.speed * chase,
             damage: def.damage * data::damage_scale(run.pace()),
             radius: radius_for(def),
             xp: def.xp,
@@ -427,8 +432,18 @@ pub(super) fn mark_dying(commands: &mut Commands, e: Entity) {
 const MAX_GEMS: usize = 350;
 /// The chance a kill drops a heal gem; a boss always drops one.
 const HEAL_DROP_CHANCE: f32 = 0.10;
+/// The health a heal gem restores.
+const HEAL_GEM: f32 = 30.0;
 /// The share of max health a level-up restores.
 const LEVEL_HEAL: f32 = 0.10;
+/// On a route the hero runs faster than a mount, so the horde runs faster than its base speed to keep pace.
+const ROUTE_CHASE: f32 = 1.5;
+/// On a route a heal gem lands near the hero on this clock, so healing does not wait on kills.
+const ROUTE_HEAL_EVERY: f32 = 12.0;
+/// The most timed heal gems on the ground at once; the hero must run to them.
+const ROUTE_HEAL_CAP: usize = 2;
+/// How far from the hero a timed heal gem lands.
+const ROUTE_HEAL_RANGE: f32 = 6.0;
 
 pub(super) fn drop_loot(
     mut commands: Commands,
@@ -440,7 +455,7 @@ pub(super) fn drop_loot(
     let mut count = gems.iter().count();
     for d in drops.read() {
         if d.boss || rng.f32() < HEAL_DROP_CHANCE {
-            let heal = GemKind::Heal(if d.boss { 1000.0 } else { 30.0 });
+            let heal = GemKind::Heal(if d.boss { 1000.0 } else { HEAL_GEM });
             spawn_gem(&mut commands, run.guid(), d.pos + Vec3::X * 0.8, heal);
         }
         if count >= MAX_GEMS && !d.boss {
@@ -464,6 +479,42 @@ fn spawn_gem(commands: &mut Commands, serial: u64, pos: Vec3, kind: GemKind) {
         pulled: false,
         speed: 6.0,
     });
+}
+
+/// On a route, a heal gem lands near the hero on a clock; the hero must run to it.
+pub(super) fn spawn_route_heals(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut run: ResMut<Run>,
+    mut rng: ResMut<Rng>,
+    mut clock: Local<f32>,
+    hero: Query<&Transform, With<Hero>>,
+    gems: Query<&Gem>,
+    world: WorldPoint,
+) {
+    let Ok(h) = hero.single() else { return };
+    if run.route.is_none() || run.dead_t.is_some() {
+        return;
+    }
+    *clock += time.delta_secs();
+    if *clock < ROUTE_HEAL_EVERY {
+        return;
+    }
+    *clock = 0.0;
+    let waiting = gems
+        .iter()
+        .filter(|g| matches!(g.kind, GemKind::Heal(_)))
+        .count();
+    if waiting >= ROUTE_HEAL_CAP {
+        return;
+    }
+    let a = rng.range(0.0, std::f32::consts::TAU);
+    let pos = ground(
+        &world,
+        h.translation + Vec3::new(a.cos(), 0.0, a.sin()) * ROUTE_HEAL_RANGE,
+        h.translation.y,
+    );
+    spawn_gem(&mut commands, run.guid(), pos, GemKind::Heal(HEAL_GEM));
 }
 
 /// Gems in the magnet's reach fly to the hero; levels bank as they land.

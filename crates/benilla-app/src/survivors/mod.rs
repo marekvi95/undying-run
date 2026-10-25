@@ -80,6 +80,7 @@ impl Plugin for SurvivorsPlugin {
                     abilities::apply_hits,
                     enemies::tick_marks,
                     enemies::drop_loot,
+                    enemies::spawn_route_heals,
                     enemies::collect_gems,
                     hero::hero_vitals,
                 )
