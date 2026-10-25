@@ -556,6 +556,7 @@ pub(super) fn collect_gems(
     while run.xp >= data::xp_to_next(run.level) {
         run.xp -= data::xp_to_next(run.level);
         run.level += 1;
+        run.pending_levels += 1;
         run.hp = (run.hp + stats.max_hp * LEVEL_HEAL).min(stats.max_hp);
         if run.level == super::mobility::LEARN_LEVEL {
             if let Some(m) = super::mobility::for_class(run.class.id) {
