@@ -1337,9 +1337,9 @@ pub(crate) fn hp_scale(elapsed: f32) -> f32 {
     1.0 + progress(elapsed) * 0.4
 }
 
-/// Enemy damage grows the same way, from a base of 60%: a horde is a nuisance to outrun, not a wall.
+/// Enemy damage grows the same way, from a base of 40%: a horde is a nuisance to outrun, not a wall.
 pub(crate) fn damage_scale(elapsed: f32) -> f32 {
-    0.6 * (1.0 + progress(elapsed) * 0.5)
+    0.4 * (1.0 + progress(elapsed) * 0.5)
 }
 
 /// The experience to go from `level` to the next: Vampire Survivors' curve, cheap early.

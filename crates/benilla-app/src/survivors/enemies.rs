@@ -438,12 +438,16 @@ const HEAL_GEM: f32 = 30.0;
 const LEVEL_HEAL: f32 = 0.10;
 /// On a route the hero runs faster than a mount, so the horde runs faster than its base speed to keep pace.
 const ROUTE_CHASE: f32 = 1.5;
-/// On a route a heal gem lands near the hero on this clock, so healing does not wait on kills.
-const ROUTE_HEAL_EVERY: f32 = 12.0;
-/// The most timed heal gems on the ground at once; the hero must run to them.
-const ROUTE_HEAL_CAP: usize = 2;
-/// How far from the hero a timed heal gem lands.
-const ROUTE_HEAL_RANGE: f32 = 6.0;
+/// On a route a heal gem lands on the road ahead on this clock, so healing does not wait on kills.
+const ROUTE_HEAL_EVERY: f32 = 8.0;
+/// The most timed heal gems waiting ahead at once.
+const ROUTE_HEAL_CAP: usize = 3;
+/// How far ahead of the hero a timed heal gem lands, along the road to the next stop.
+const ROUTE_HEAL_RANGE: f32 = 12.0;
+/// How far to either side of that road a timed heal gem may land.
+const ROUTE_HEAL_SPREAD: f32 = 4.0;
+/// Past this distance a timed heal gem is behind the hero: it is cleared so it cannot block new ones.
+const ROUTE_HEAL_STALE: f32 = 40.0;
 
 pub(super) fn drop_loot(
     mut commands: Commands,
@@ -481,7 +485,7 @@ fn spawn_gem(commands: &mut Commands, serial: u64, pos: Vec3, kind: GemKind) {
     });
 }
 
-/// On a route, a heal gem lands near the hero on a clock; the hero must run to it.
+/// On a route, a heal gem lands on the road ahead, where the arrow points, so the hero runs into it.
 pub(super) fn spawn_route_heals(
     mut commands: Commands,
     time: Res<Time>,
@@ -489,29 +493,42 @@ pub(super) fn spawn_route_heals(
     mut rng: ResMut<Rng>,
     mut clock: Local<f32>,
     hero: Query<&Transform, With<Hero>>,
-    gems: Query<&Gem>,
+    gems: Query<(Entity, &Transform, &Gem)>,
     world: WorldPoint,
 ) {
     let Ok(h) = hero.single() else { return };
     if run.route.is_none() || run.dead_t.is_some() {
         return;
     }
+    let mut waiting = 0;
+    for (e, tf, g) in &gems {
+        if !matches!(g.kind, GemKind::Heal(_)) {
+            continue;
+        }
+        if flat(tf.translation - h.translation).length() > ROUTE_HEAL_STALE {
+            commands.entity(e).despawn();
+        } else {
+            waiting += 1;
+        }
+    }
     *clock += time.delta_secs();
     if *clock < ROUTE_HEAL_EVERY {
         return;
     }
     *clock = 0.0;
-    let waiting = gems
-        .iter()
-        .filter(|g| matches!(g.kind, GemKind::Heal(_)))
-        .count();
     if waiting >= ROUTE_HEAL_CAP {
         return;
     }
-    let a = rng.range(0.0, std::f32::consts::TAU);
+    let ahead = match continent::heading(&run, h.translation) {
+        Some(a) => a,
+        None => rng.range(0.0, std::f32::consts::TAU),
+    };
+    let dir = Vec3::new(ahead.cos(), 0.0, ahead.sin());
+    let across = Vec3::new(-dir.z, 0.0, dir.x);
+    let side = rng.range(-ROUTE_HEAL_SPREAD, ROUTE_HEAL_SPREAD);
     let pos = ground(
         &world,
-        h.translation + Vec3::new(a.cos(), 0.0, a.sin()) * ROUTE_HEAL_RANGE,
+        h.translation + dir * ROUTE_HEAL_RANGE + across * side,
         h.translation.y,
     );
     spawn_gem(&mut commands, run.guid(), pos, GemKind::Heal(HEAL_GEM));
