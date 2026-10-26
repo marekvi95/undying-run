@@ -10,6 +10,7 @@ mod cards;
 mod continent;
 mod data;
 mod enemies;
+mod fill;
 #[cfg(not(target_arch = "wasm32"))]
 mod gamepad;
 mod grade;
@@ -56,11 +57,13 @@ impl Plugin for SurvivorsPlugin {
             .add_message::<abilities::Hit>()
             .add_message::<enemies::Loot>()
             .add_plugins(bevy::ui_render::UiMaterialPlugin::<hud::SweepUiMaterial>::default())
+            .add_plugins(bevy::ui_render::UiMaterialPlugin::<fill::FillMaterial>::default())
             .add_systems(Startup, (hud::setup_hud, continent::spawn_arrow))
             .add_systems(Update, hero::daylight)
             .add_systems(
                 Update,
                 (
+                    hero::drop_stray_buttons,
                     mobility::cast_mobility,
                     hero::drive_hero,
                     hero::place_camera,

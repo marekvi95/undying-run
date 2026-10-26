@@ -285,6 +285,7 @@ pub(super) fn setup_hud(
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
     mut sweeps_init: ResMut<Assets<SweepUiMaterial>>,
+    mut fills: ResMut<Assets<super::fill::FillMaterial>>,
 ) {
     let font = crate::char_select::wow_font(&asset_server);
     let number_font: Handle<Font> = asset_server.load("mpq://Fonts/ARIALN.ttf");
@@ -635,15 +636,21 @@ pub(super) fn setup_hud(
                 row_gap: Val::Px(18.0),
                 ..default()
             },
-            // A dark vignette closing in on the cards.
-            BackgroundGradient::from(RadialGradient::new(
-                UiPosition::CENTER,
-                RadialGradientShape::FarthestCorner,
-                vec![
-                    ColorStop::percent(Color::srgba(0.04, 0.025, 0.0, 0.72), 0.0),
-                    ColorStop::percent(Color::srgba(0.0, 0.0, 0.0, 0.9), 100.0),
-                ],
-            )),
+            // A dark vignette closing in on the cards, a slow golden light at its heart (the
+            // 1400-unit burst's radius over the 768-unit canvas).
+            MaterialNode(
+                fills.add(
+                    super::fill::FillMaterial::radial(
+                        Color::srgba(0.04, 0.025, 0.0, 0.72),
+                        Color::srgba(0.0, 0.0, 0.0, 0.9),
+                    )
+                    .with_glow(
+                        Color::srgba(1.0, 0.75, 0.25, 0.22),
+                        Vec2::splat(0.5),
+                        Vec2::splat(700.0 / 768.0),
+                    ),
+                ),
+            ),
             GlobalZIndex(420),
             Visibility::Hidden,
             // The build's icons stay hoverable under the cards.
@@ -667,33 +674,23 @@ pub(super) fn setup_hud(
                     ),
                     ..default()
                 },
-                BackgroundGradient(vec![
-                    Gradient::Conic(ConicGradient::new(
-                        UiPosition::CENTER,
-                        (0..24)
-                            .map(|i| {
-                                let a = i as f32 / 24.0 * std::f32::consts::TAU;
-                                let on = i % 2 == 0;
-                                AngularColorStop::new(
-                                    if on {
-                                        Color::srgba(1.0, 0.8, 0.3, 0.07)
-                                    } else {
-                                        Color::srgba(1.0, 0.8, 0.3, 0.0)
-                                    },
-                                    a,
-                                )
-                            })
-                            .collect(),
-                    )),
-                    Gradient::Radial(RadialGradient::new(
-                        UiPosition::CENTER,
-                        RadialGradientShape::ClosestSide,
-                        vec![
-                            ColorStop::percent(Color::srgba(1.0, 0.75, 0.25, 0.22), 0.0),
-                            ColorStop::percent(Color::srgba(0.0, 0.0, 0.0, 0.0), 100.0),
-                        ],
-                    )),
-                ]),
+                BackgroundGradient(vec![Gradient::Conic(ConicGradient::new(
+                    UiPosition::CENTER,
+                    (0..24)
+                        .map(|i| {
+                            let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                            let on = i % 2 == 0;
+                            AngularColorStop::new(
+                                if on {
+                                    Color::srgba(1.0, 0.8, 0.3, 0.07)
+                                } else {
+                                    Color::srgba(1.0, 0.8, 0.3, 0.0)
+                                },
+                                a,
+                            )
+                        })
+                        .collect(),
+                ))]),
                 UiTransform::default(),
                 bevy::ui::FocusPolicy::Pass,
             ));
@@ -771,14 +768,10 @@ pub(super) fn setup_hud(
                 row_gap: Val::Px(14.0),
                 ..default()
             },
-            BackgroundGradient::from(RadialGradient::new(
-                UiPosition::CENTER,
-                RadialGradientShape::FarthestCorner,
-                vec![
-                    ColorStop::percent(Color::srgba(0.07, 0.02, 0.0, 0.8), 0.0),
-                    ColorStop::percent(Color::srgba(0.0, 0.0, 0.0, 0.94), 100.0),
-                ],
-            )),
+            MaterialNode(fills.add(super::fill::FillMaterial::radial(
+                Color::srgba(0.07, 0.02, 0.0, 0.8),
+                Color::srgba(0.0, 0.0, 0.0, 0.94),
+            ))),
             GlobalZIndex(440),
             Visibility::Hidden,
         ))

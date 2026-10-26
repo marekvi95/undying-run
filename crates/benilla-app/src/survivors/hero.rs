@@ -317,6 +317,22 @@ pub(super) fn drive_hero(
     player.pos = focus;
 }
 
+/// Let go of the mouse buttons when the page loses focus or the pointer leaves it. A release that
+/// lands elsewhere (alt-tab mid-drag, a browser or OS popup) never reaches the game, so the button
+/// would read as held and the unlocked camera would swing with every move until both buttons were
+/// clicked again. Survivors only: the engine's mouse-look keeps its buttons across a deactivate,
+/// as 1.12.1 does.
+pub(super) fn drop_stray_buttons(
+    mut focus: MessageReader<bevy::window::WindowFocused>,
+    mut left: MessageReader<bevy::window::CursorLeft>,
+    mut mouse: ResMut<ButtonInput<MouseButton>>,
+) {
+    let lost = focus.read().any(|f| !f.focused);
+    if lost | (left.read().count() > 0) {
+        mouse.release_all();
+    }
+}
+
 /// A slow orbit at the menu; in play, the camera follows the hero's heading, with the right stick
 /// or right-drag swinging and tilting it and `C` recentring it behind him.
 pub(super) fn place_camera(
@@ -531,5 +547,53 @@ mod tests {
             let model_facing = Quat::from_rotation_y(yaw_toward(look)) * Vec3::NEG_Z;
             assert!(model_facing.distance(look) < 1e-5, "yaw {yaw}");
         }
+    }
+
+    use bevy::ecs::system::RunSystemOnce;
+    use bevy::window::{CursorLeft, WindowFocused};
+
+    fn held_left() -> World {
+        let mut world = World::new();
+        world.init_resource::<Messages<WindowFocused>>();
+        world.init_resource::<Messages<CursorLeft>>();
+        let mut mouse = ButtonInput::<MouseButton>::default();
+        mouse.press(MouseButton::Left);
+        world.insert_resource(mouse);
+        world
+    }
+
+    fn left_held(world: &World) -> bool {
+        world
+            .resource::<ButtonInput<MouseButton>>()
+            .pressed(MouseButton::Left)
+    }
+
+    #[test]
+    fn a_held_button_is_dropped_when_the_page_loses_focus() {
+        let mut world = held_left();
+        world.run_system_once(drop_stray_buttons).unwrap();
+        assert!(left_held(&world), "nothing happened: the drag goes on");
+        world.write_message(WindowFocused {
+            window: Entity::PLACEHOLDER,
+            focused: true,
+        });
+        world.run_system_once(drop_stray_buttons).unwrap();
+        assert!(left_held(&world), "gaining focus is no release");
+        world.write_message(WindowFocused {
+            window: Entity::PLACEHOLDER,
+            focused: false,
+        });
+        world.run_system_once(drop_stray_buttons).unwrap();
+        assert!(!left_held(&world));
+    }
+
+    #[test]
+    fn a_held_button_is_dropped_when_the_pointer_leaves_the_page() {
+        let mut world = held_left();
+        world.write_message(CursorLeft {
+            window: Entity::PLACEHOLDER,
+        });
+        world.run_system_once(drop_stray_buttons).unwrap();
+        assert!(!left_held(&world));
     }
 }
