@@ -5,8 +5,8 @@ face.
 
 | When | Key / Input | Action |
 |---|---|---|
-| Menu | Click a race, gender, class and zone | make your pick (**Randomize** rolls one) |
-| Menu | **Enter** (or **Enter World**) | start the run; the world travels to the zone picked |
+| Menu | Click a race, gender and class | make your pick (**Randomize** rolls one) |
+| Menu | **Enter** (or **Enter World**) | start the run: the hero sets off along the route |
 | Playing | **W / S** or **↑ / ↓** | run forward / back |
 | Playing | **A / D** or **← / →** | turn left / right (the camera turns with you) |
 | Playing | **Q / E** | strafe left / right |
@@ -26,7 +26,7 @@ face.
 
 The camera trails the hero's heading at a 61° tilt. Turning with A or D, or right-dragging, swings
 the camera and the hero together. **C** recentres the camera behind him. In the menu it slowly
-orbits the preview hero. Your race, gender, class and zone are remembered across reloads.
+orbits the preview hero. Your race, gender and class are remembered across reloads.
 
 ## Gamepad
 

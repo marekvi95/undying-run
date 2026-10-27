@@ -16,14 +16,16 @@ from-scratch WoW 1.12.1 client engine (Rust + [Bevy](https://bevy.org)).**
 > ([r/wowservers announcement](https://www.reddit.com/r/wowservers/comments/1x0yidl/azeroth_survivors_roguelike_wow_singleplayer_game/)
 > · [Discord](https://discord.gg/UzxaZuSAk)). This repository is a from-source local build of the
 > game, running on the [benilla](#how-its-built) / [wenilla](#how-its-built) engine, for personal use.
+> This fork adds the **continent run** described below.
 
-Pick a class and a battleground, then survive: WASD to move, your abilities cast themselves,
-enemies swarm in waves, you level up and pick upgrades, and a boss shows up every couple of
-minutes. **No server, no login, no account** — fully offline and self-contained.
+Pick a class and run the Eastern Kingdoms. The hero crosses the continent from Westfall to
+Naxxramas faster than a mount, while enemies chase and die and every kill feeds your level-ups.
+Classic WoW keys: **A** and **D** turn, **W** and **S** run. **No server, no login, no account** —
+fully offline and self-contained.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/menu.jpg" alt="The pick screen: race, gender and class on the left, sixteen zones on the right, the hero in between"></td>
+    <td width="50%"><img src="docs/screenshots/menu.jpg" alt="An older pick screen with sixteen zones on the right; the run now opens on a route card"></td>
     <td width="50%"><img src="docs/screenshots/combat.jpg" alt="A Mage holding off Elwynn Forest's wolves with frost, fire and arcane"></td>
   </tr>
   <tr>
@@ -32,25 +34,38 @@ minutes. **No server, no login, no account** — fully offline and self-containe
   </tr>
 </table>
 
+### The continent run
+
+- **Thirteen stops**, Westfall to Naxxramas, joined along the road so consecutive zones touch. The
+  hero runs at twice his class's base speed, faster than a mount, and gains levels on the way.
+- **A 3D route arrow** floats over the hero and points at the next stop, with the distance to it
+  and the stops reached so far.
+- **Healing on the road:** a heal gem lands ahead, toward the arrow, every 8 seconds (up to three
+  waiting), so healing does not depend on kills.
+- **Classic controls:** A and D turn, W and S run, Q and E strafe, and the camera trails your
+  heading. See [CONTROLS.md](CONTROLS.md).
+- **A run card on the pick screen** lists the stops with their level ranges. Battlegrounds are no
+  longer in the picker, though their code remains.
+
 ### In this build
 
 - **A character-create pick screen** built from the client's own glue art: eight races, both
-  genders, every class the race can be, and **sixteen zones**, from the starting zones to
-  Naxxramas and the Gates of Ahn'Qiraj. Each zone fights with its own creatures and bosses, taken
-  from the zone's real spawns. Your pick is remembered across reloads.
+  genders and every class the race can be. The screen opens on the run card, and your pick is
+  remembered across reloads.
 - **Level-up cards** that deal in, tilt toward the cursor and lift on hover. Their WoW item-quality
   colour says how strong a pick is, and each card lists exactly what changes, like
   `Damage 20 » 26` or `Targets 2 » 3`.
-- **A class movement spell on F** from level 5, aimed at the cursor: Blink, Charge, Sprint, Dash,
+- **A class movement spell on F** from level 5, aimed where you face: Blink, Charge, Sprint, Dash,
   Fade, Ghost Wolf, Aspect of the Cheetah, Blessing of Freedom, Howl of Terror.
-- **A camera you can free:** locked top-down by default with the hero facing the cursor. **C**
-  unlocks it to swing and tilt, and the wheel zooms from over the shoulder out to 70 yards.
+- **A camera that follows your heading** at a 61° tilt. Turn with A or D, or right-drag, and the
+  camera swings with you. **C** swings it back behind the hero, and the wheel zooms from over the
+  shoulder out to 70 yards.
 - A light sharpen-and-colour pass over the picture (**G** toggles it).
 
 ## Play it
 
 ```bash
-git clone https://github.com/OutThisLife/azeroth-survivors-re
+git clone https://github.com/marekvi95/azeroth-survivors-re
 cd azeroth-survivors-re
 make build     # fetch game data + install toolchain + build the wasm (~5.5 GB download)
 make start     # → open http://127.0.0.1:8090/
@@ -66,13 +81,21 @@ make start     # → open http://127.0.0.1:8090/
 
 **Prerequisites:** [Rust](https://rustup.rs/), `make`, `curl`, `unzip`, and a bash shell. On Windows, run everything from Git Bash; PowerShell and cmd can't run the scripts.
 
+To play the desktop build instead of the browser, point it at a client's `Data` folder:
+
+```bash
+WOW_DATA=/path/to/WoW/Data cargo run --release -p warcraft-survivors
+```
+
+`make native` does the same after fetching the data for you.
+
 Run `make` (or `make help`) to list every target.
 
 ## Controls
 
-See [CONTROLS.md](CONTROLS.md). The short version: **WASD** to move, **Space** to jump, **F**
-for your class's movement spell, the **mouse wheel** to zoom, **C** to unlock the camera, **Esc**
-to pause, **1/2/3** to pick a level-up card.
+See [CONTROLS.md](CONTROLS.md). The short version: **A/D** turn, **W/S** run, **Q/E** strafe,
+**Space** to jump, **F** for your class's movement spell, the **mouse wheel** to zoom, **C** to
+recentre the camera behind the hero, **Esc** to pause, **1/2/3** to pick a level-up card.
 
 ## The game data (not in this repo)
 
