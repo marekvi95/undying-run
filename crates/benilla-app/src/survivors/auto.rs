@@ -68,7 +68,7 @@ pub(super) fn from_env() -> Option<Auto> {
         .iter()
         .position(|c| c.name.eq_ignore_ascii_case(name))
         .unwrap_or(0);
-    let map = crate::webenv::var("WOW_SURVIVORS_MAP").map_or(0, |m| {
+    let map = crate::webenv::var("WOW_SURVIVORS_MAP").map_or(super::continent::run_start(), |m| {
         let m = m.trim().to_ascii_lowercase();
         m.parse::<usize>()
             .ok()

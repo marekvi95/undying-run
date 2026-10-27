@@ -176,7 +176,7 @@ pub(super) enum Phase {
 pub(super) struct RunEntity;
 
 /// The class, look and battleground picked at the menu; the battleground holds for the run.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub(super) struct Selection {
     pub class: Option<usize>,
     /// `(display, race, sex)`, one per race and sex the class's trainers come in.
@@ -190,6 +190,20 @@ pub(super) struct Selection {
     pub stage: usize,
     /// Bumped on every change, so the menu rebuilds once.
     pub version: u32,
+}
+
+impl Default for Selection {
+    fn default() -> Self {
+        let run = continent::run_start();
+        Self {
+            class: None,
+            looks: Vec::new(),
+            look: None,
+            map: run,
+            stage: run,
+            version: 0,
+        }
+    }
 }
 
 impl Selection {

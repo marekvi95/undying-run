@@ -180,6 +180,14 @@ pub(super) fn route_of(map: &MapDef) -> Option<&'static [&'static str]> {
         .map(|(_, zones)| *zones)
 }
 
+/// The index in [`data::MAPS`] of the run the picker offers: the first route's start.
+pub(super) fn run_start() -> usize {
+    data::MAPS
+        .iter()
+        .position(|m| m.name == ROUTES[0].0)
+        .expect("the run's start is in MAPS")
+}
+
 /// A route zone's roster index and definition; the test checks every route names one.
 fn zone_def(zone: &str) -> (usize, &'static MapDef) {
     data::zone(zone).unwrap_or_else(|| panic!("route zone {zone} is in no zone table"))
