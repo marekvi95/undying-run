@@ -18,7 +18,8 @@ use super::units::{flat, wow_to_bevy, yaw_toward};
 use super::Run;
 
 /// The routes, by the name of the [`MapDef`] that starts them: zone names in order, each resolved
-/// through [`data::MAPS`] for its centre and roster.
+/// through [`data::zone`] for its centre and roster. Consecutive zones touch, so the run crosses
+/// the continent without a gap.
 pub(super) static ROUTES: &[(&str, &[&str])] = &[(
     "Eastern Kingdoms Run",
     &[
@@ -26,8 +27,14 @@ pub(super) static ROUTES: &[(&str, &[&str])] = &[(
         "Elwynn Forest",
         "Duskwood",
         "Redridge Mountains",
+        "Burning Steppes",
+        "Searing Gorge",
         "Dun Morogh",
+        "Wetlands",
+        "Hillsbrad Foothills",
+        "Alterac Mountains",
         "Tirisfal Glades",
+        "Western Plaguelands",
         "Naxxramas",
     ],
 )];
@@ -173,12 +180,13 @@ pub(super) fn route_of(map: &MapDef) -> Option<&'static [&'static str]> {
         .map(|(_, zones)| *zones)
 }
 
-fn zone_index(zone: &str) -> usize {
-    data::MAPS.iter().position(|m| m.name == zone).unwrap_or(0)
+/// A route zone's roster index and definition; the test checks every route names one.
+fn zone_def(zone: &str) -> (usize, &'static MapDef) {
+    data::zone(zone).unwrap_or_else(|| panic!("route zone {zone} is in no zone table"))
 }
 
 fn zone_centre(zone: &str) -> Vec3 {
-    wow_to_bevy(data::MAPS[zone_index(zone)].center)
+    wow_to_bevy(zone_def(zone).1.center)
 }
 
 /// The zone the hero stands in: the last stop reached.
@@ -190,7 +198,7 @@ fn current_zone(route: &'static [&'static str], stops: usize) -> &'static str {
 /// battleground's.
 pub(super) fn roster_for(run: &Run, picked: usize) -> &'static Roster {
     match run.route {
-        Some(route) => data::roster(zone_index(current_zone(route, run.stops))),
+        Some(route) => data::roster(zone_def(current_zone(route, run.stops)).0),
         None => data::roster(picked),
     }
 }
@@ -203,7 +211,7 @@ pub(super) fn next_boss(run: &Run) -> Option<&'static EnemyDef> {
     if run.bosses as usize >= owed {
         return None;
     }
-    data::roster(zone_index(route[run.bosses as usize + 1]))
+    data::roster(zone_def(route[run.bosses as usize + 1]).0)
         .bosses
         .first()
 }
@@ -339,13 +347,10 @@ mod tests {
                 .find(|m| m.name == name)
                 .expect("the route's map");
             assert!(zones.len() >= 3, "{name} needs stops between its ends");
-            assert_eq!(start.center, data::MAPS[zone_index(zones[0])].center);
+            assert_eq!(start.center, zone_def(zones[0]).1.center);
             for zone in zones {
-                assert!(
-                    data::MAPS.iter().any(|m| m.name == *zone),
-                    "{zone} is not a map"
-                );
-                let roster = data::roster(zone_index(zone));
+                assert!(data::zone(zone).is_some(), "{zone} is not a zone");
+                let roster = data::roster(zone_def(zone).0);
                 assert!(roster.enemies.len() >= 3, "{zone} needs a horde");
                 assert!(!roster.bosses.is_empty(), "{zone} needs a boss");
                 let from_start = flat(zone_centre(zone) - zone_centre(zones[0])).length();

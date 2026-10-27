@@ -1961,6 +1961,80 @@ pub(crate) static MAPS: &[MapDef] = &[
     },
 ];
 
+/// The zones a continent run crosses between its stops, which the battleground picker does not
+/// list. Stops are reached on the ground, so only the centre's x and y matter; their leash and
+/// victory line are never read, and their rosters are the default ones.
+pub(crate) static ROUTE_ZONES: &[MapDef] = &[
+    MapDef {
+        name: "Burning Steppes",
+        zone: "Eastern Kingdoms",
+        map: 0,
+        center: [-8028.9, -2142.7, 0.0],
+        leash: 150.0,
+        victory: "",
+        foes: &[],
+        bosses: &[],
+    },
+    MapDef {
+        name: "Searing Gorge",
+        zone: "Eastern Kingdoms",
+        map: 0,
+        center: [-6747.7, -1459.1, 0.0],
+        leash: 150.0,
+        victory: "",
+        foes: &[],
+        bosses: &[],
+    },
+    MapDef {
+        name: "Wetlands",
+        zone: "Eastern Kingdoms",
+        map: 0,
+        center: [-3290.0, -572.0, 0.0],
+        leash: 150.0,
+        victory: "",
+        foes: &[],
+        bosses: &[],
+    },
+    MapDef {
+        name: "Hillsbrad Foothills",
+        zone: "Eastern Kingdoms",
+        map: 0,
+        center: [-1217.0, -408.0, 0.0],
+        leash: 150.0,
+        victory: "",
+        foes: &[],
+        bosses: &[],
+    },
+    MapDef {
+        name: "Alterac Mountains",
+        zone: "Eastern Kingdoms",
+        map: 0,
+        center: [569.0, -266.0, 0.0],
+        leash: 150.0,
+        victory: "",
+        foes: &[],
+        bosses: &[],
+    },
+    MapDef {
+        name: "Western Plaguelands",
+        zone: "Eastern Kingdoms",
+        map: 0,
+        center: [2457.6, -1814.6, 0.0],
+        leash: 150.0,
+        victory: "",
+        foes: &[],
+        bosses: &[],
+    },
+];
+
+/// A zone a route can name, from [`MAPS`] or [`ROUTE_ZONES`], with its index among the rosters.
+pub(crate) fn zone(name: &str) -> Option<(usize, &'static MapDef)> {
+    MAPS.iter()
+        .chain(ROUTE_ZONES)
+        .enumerate()
+        .find(|(_, m)| m.name == name)
+}
+
 /// A battleground's horde and bosses with their numbers.
 pub(crate) struct Roster {
     pub enemies: Vec<EnemyDef>,
@@ -1969,6 +2043,7 @@ pub(crate) struct Roster {
 
 static ROSTERS: std::sync::LazyLock<Vec<Roster>> = std::sync::LazyLock::new(|| {
     MAPS.iter()
+        .chain(ROUTE_ZONES)
         .map(|m| {
             if m.foes.is_empty() {
                 Roster {
