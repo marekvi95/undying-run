@@ -206,6 +206,7 @@ pub(super) fn drive_hero(
     pad: Option<Res<PadSteer>>,
     mut player: ResMut<crate::player::Player>,
     mut hero: Query<(&mut Transform, &mut MovementState, &mut Hero)>,
+    mut placed_on: Local<Option<usize>>,
 ) {
     let focus = match hero.single_mut() {
         Ok((mut tf, mut mv, mut hm)) => {
@@ -262,8 +263,10 @@ pub(super) fn drive_hero(
             let map = selection.stage_def();
             let center = arena(map);
             let off = flat(pos - center);
-            if off.length() > map.leash * 2.0 {
-                // Just entered another battleground: start at its centre.
+            // Entering another battleground starts him at its centre, however near the last one
+            // stood: a route's wide leash would otherwise keep the menu's hero where he spawned.
+            let entered = placed_on.replace(selection.stage) != Some(selection.stage);
+            if entered || off.length() > map.leash * 2.0 {
                 pos = center;
             } else if off.length() > map.leash {
                 let held = center + off.normalize() * map.leash;
