@@ -16,7 +16,8 @@ Aethus, run locally on a from-scratch WoW 1.12.1 client engine (Rust + [Bevy](ht
 > ([r/wowservers announcement](https://www.reddit.com/r/wowservers/comments/1x0yidl/azeroth_survivors_roguelike_wow_singleplayer_game/)
 > · [Discord](https://discord.gg/UzxaZuSAk)). This repository is a from-source local build of the
 > game, running on the [benilla](#how-its-built) / [wenilla](#how-its-built) engine, for personal use.
-> This fork adds the **Undying Run** described below.
+> This repository is a fork of [OutThisLife/azeroth-survivors-re](https://github.com/OutThisLife/azeroth-survivors-re).
+> The **Undying Run** described below lives on the `continent-run` branch, the fork's default branch.
 
 Pick a class and run the Eastern Kingdoms. The hero crosses the continent from Westfall to
 Naxxramas faster than a mount, while enemies chase and die and every kill feeds your level-ups.
