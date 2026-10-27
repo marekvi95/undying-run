@@ -221,6 +221,15 @@ impl WorldLoadProgress {
     }
 }
 
+/// A floor on the outer residency window, for a caller whose viewer outruns the reference ring
+/// (a run crossing the map). Zero keeps the reference's `max(inner + 2, 8)`; a value above that
+/// widens the window to `outer_floor_chunks` in chunks, which must stay within
+/// `window::max_resident_reach_yd` so the art sweep's floor still clears it.
+#[derive(Resource, Default, Clone, Copy)]
+pub struct StreamLookahead {
+    pub outer_floor_chunks: i32,
+}
+
 /// Where the world streams from, written by whatever owns a viewer and read by every streaming
 /// lane. The ladder: a live attached avatar, else the picked character's entry row, else the
 /// camera, else [`SPAWN_XY`]. A detached eye streams from the camera but keeps the body, which the
@@ -374,6 +383,7 @@ impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
         // Defaulted here, so a program with no game boots and streams around the camera.
         app.init_resource::<ViewFocus>()
+            .init_resource::<StreamLookahead>()
             .init_resource::<WorldLoadProgress>()
             .init_resource::<TerrainStreamer>()
             .init_resource::<StreamActivity>()
@@ -470,6 +480,7 @@ fn stream_terrain(
         Option<Res<CurrentMap>>,
         Option<Res<MapCatalogRes>>,
         Res<crate::view::ViewDistance>,
+        Res<StreamLookahead>,
     ),
     mut load_progress: Option<ResMut<WorldLoadProgress>>,
     // The stream-batch accumulators the map-change drop must clear.
@@ -482,7 +493,7 @@ fn stream_terrain(
 ) {
     let (mut welds, mut static_merge, mut staticgx) = batchers;
     let (mut materials, mut meshes, wdts, _time, mut activity) = asset_stores;
-    let (current_map, map_catalog, view) = location;
+    let (current_map, map_catalog, view, lookahead) = location;
     // Idle until other plugins' startup has made the light buffer and the map catalog.
     let (Some(shared_light), Some(map_catalog)) = (shared_light, map_catalog) else {
         return;
@@ -555,7 +566,12 @@ fn stream_terrain(
 
     // The residency window is the reference's, from the live `farclip` in chunk units.
     let center = focus.resolve(camera.single().ok().map(|c| c.translation));
-    let window = StreamWindow::at(view.farclip, center[0], center[1]);
+    let window = StreamWindow::at_with_floor(
+        view.farclip,
+        center[0],
+        center[1],
+        lookahead.outer_floor_chunks,
+    );
     let (cx, cy) = window.focus_tile();
     let same_window = state.focus == (cx, cy) && state.reach == Some((window.inner, window.outer));
     // Skip an unchanged frame only in a paced, complete, presentable world, since the tail it

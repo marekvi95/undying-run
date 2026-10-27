@@ -34,6 +34,9 @@ pub(super) static ROUTES: &[(&str, &[&str])] = &[(
 
 /// Run speed on a route, over the class's base: 14 yd/s before haste, faster than a mount.
 const RUN_SPEED: f32 = 2.0;
+/// The stream window's outer floor on a route, in chunks (26 ≈ 867 yd): the reach the view
+/// distance's maximum already gives, so a run ahead of the reference ring's edge does not stall.
+pub(super) const ROUTE_STREAM_CHUNKS: i32 = 26;
 /// Within this many yards of a zone's centre, the zone is reached.
 const STOP_RADIUS: f32 = 150.0;
 /// Horde further behind the hero than this is removed; the spawner keeps the horde ahead.

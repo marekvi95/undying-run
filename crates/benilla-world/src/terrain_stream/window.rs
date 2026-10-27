@@ -35,12 +35,17 @@ pub struct StreamWindow {
 impl StreamWindow {
     /// The windows `farclip` yards of view distance put around the WoW-space focus `(x, y)`.
     pub fn at(farclip: f32, wow_x: f32, wow_y: f32) -> Self {
+        Self::at_with_floor(farclip, wow_x, wow_y, 0)
+    }
+
+    /// As [`StreamWindow::at`], with the outer half-width raised to at least `outer_floor` chunks.
+    pub fn at_with_floor(farclip: f32, wow_x: f32, wow_y: f32, outer_floor: i32) -> Self {
         let (cx, cy) = world_to_chunk(wow_x, wow_y);
         let inner = inner_radius(farclip);
         Self {
             focus: (cx as i32, cy as i32),
             inner,
-            outer: outer_radius(inner),
+            outer: outer_radius(inner).max(outer_floor),
         }
     }
 
@@ -127,6 +132,19 @@ mod tests {
         StreamWindow::at(farclip, wx, wy)
     }
 
+    /// The farthest yards from the focus to a wanted tile's far corner.
+    fn far_corner_yd(w: &StreamWindow) -> f32 {
+        let (fx, fy) = (w.focus.0 as f32, w.focus.1 as f32);
+        w.wanted_tiles()
+            .into_iter()
+            .map(|(tx, ty)| {
+                let cx = ((tx + 1) * CHUNKS_PER_TILE) as f32 - fx;
+                let cy = ((ty + 1) * CHUNKS_PER_TILE) as f32 - fy;
+                (cx * cx + cy * cy).sqrt() * CHUNK_SIZE
+            })
+            .fold(0.0f32, f32::max)
+    }
+
     /// At 777 the outer window reaches 26 chunks: two tiles each way from the middle band (5×5);
     /// from a corner chunk, two behind and one ahead (4×4).
     #[test]
@@ -191,20 +209,26 @@ mod tests {
         assert!((reach - (43.0 * CHUNK_SIZE * std::f32::consts::SQRT_2 + TILE_SIZE)).abs() < 0.01);
         assert!(max_resident_reach_yd(350.0) < reach);
         // A wanted tile's far corner lies inside the reach.
-        let w = at_chunk(777.0, (32, 44), (9, 9));
-        let (fx, fy) = (w.focus.0 as f32, w.focus.1 as f32);
-        let far = w
-            .wanted_tiles()
-            .into_iter()
-            .map(|(tx, ty)| {
-                let cx = ((tx + 1) * CHUNKS_PER_TILE) as f32 - fx;
-                let cy = ((ty + 1) * CHUNKS_PER_TILE) as f32 - fy;
-                (cx * cx + cy * cy).sqrt() * CHUNK_SIZE
-            })
-            .fold(0.0f32, f32::max);
+        let far = far_corner_yd(&at_chunk(777.0, (32, 44), (9, 9)));
         assert!(
             far < reach,
             "far corner {far} must sit inside the reach {reach}"
         );
+    }
+
+    /// A route's floor widens the 350 window from 13 to 26 chunks and never narrows it, and the
+    /// widened window's far corner still sits inside the art sweep's reach.
+    #[test]
+    fn a_route_floor_widens_the_window_and_never_narrows_it() {
+        let (ox, oy) = tile_to_world(32, 44);
+        let (wx, wy) = (ox - 9.5 * CHUNK_SIZE, oy - 9.5 * CHUNK_SIZE);
+        let reference = StreamWindow::at(350.0, wx, wy);
+        assert_eq!(reference.outer, 13);
+        assert_eq!(StreamWindow::at_with_floor(350.0, wx, wy, 0), reference);
+        assert_eq!(StreamWindow::at_with_floor(350.0, wx, wy, 8), reference);
+        let route = StreamWindow::at_with_floor(350.0, wx, wy, 26);
+        assert_eq!(route.outer, 26);
+        assert!(route.wanted_tiles().len() > reference.wanted_tiles().len());
+        assert!(far_corner_yd(&route) < max_resident_reach_yd(777.0));
     }
 }

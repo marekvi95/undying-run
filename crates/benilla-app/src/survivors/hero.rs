@@ -1,10 +1,12 @@
 //! The hero: its body, WASD movement over the terrain, the top-down camera, and its health.
 
+use benilla_world::terrain_stream::StreamLookahead;
 use benilla_world::view::WorldCamera;
 use benilla_world::world_point::WorldPoint;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 
+use super::continent::{route_of, ROUTE_STREAM_CHUNKS};
 use super::data::{self, ClassDef};
 use super::units::{self, flat, wow_to_bevy, yaw_toward, Fx, Marks, UnitSpec};
 use super::{Phase, Run, Selection};
@@ -116,17 +118,28 @@ pub(super) fn arena(map: &data::MapDef) -> Vec3 {
 }
 
 /// The world is the battleground being stood in ([`Selection::stage`]): entering one on another
-/// continent worldports, which raises the loading screen until the new ground is in.
+/// continent worldports, which raises the loading screen until the new ground is in. A route
+/// keeps its stream window a ring wider, so a run that outruns the reference ring does not stall.
 pub(super) fn follow_map(
     selection: Res<Selection>,
     current: Option<ResMut<benilla_world::world_map::CurrentMap>>,
+    lookahead: Option<ResMut<StreamLookahead>>,
 ) {
-    let Some(mut current) = current else {
-        return;
-    };
-    let want = selection.stage_def().map;
-    if current.0 != want {
-        current.0 = want;
+    let stage = selection.stage_def();
+    if let Some(mut current) = current {
+        if current.0 != stage.map {
+            current.0 = stage.map;
+        }
+    }
+    if let Some(mut lookahead) = lookahead {
+        let floor = if route_of(stage).is_some() {
+            ROUTE_STREAM_CHUNKS
+        } else {
+            0
+        };
+        if lookahead.outer_floor_chunks != floor {
+            lookahead.outer_floor_chunks = floor;
+        }
     }
 }
 
