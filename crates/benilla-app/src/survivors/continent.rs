@@ -21,7 +21,7 @@ use super::Run;
 /// through [`data::zone`] for its centre and roster. Consecutive zones touch, so the run crosses
 /// the continent without a gap.
 pub(super) static ROUTES: &[(&str, &[&str])] = &[(
-    "Eastern Kingdoms Run",
+    "Undying Run",
     &[
         "Westfall",
         "Elwynn Forest",

@@ -2,10 +2,10 @@
 
 <div align="center">
 
-# Azeroth Survivors
+# Undying Run
 
-**A free fan-made WoW roguelike by [Aethus](https://wow.aethus.pl/), run locally on a
-from-scratch WoW 1.12.1 client engine (Rust + [Bevy](https://bevy.org)).**
+**A continent run through Azeroth, forked from [Azeroth Survivors](https://wow.aethus.pl/) by
+Aethus, run locally on a from-scratch WoW 1.12.1 client engine (Rust + [Bevy](https://bevy.org)).**
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
@@ -16,7 +16,7 @@ from-scratch WoW 1.12.1 client engine (Rust + [Bevy](https://bevy.org)).**
 > ([r/wowservers announcement](https://www.reddit.com/r/wowservers/comments/1x0yidl/azeroth_survivors_roguelike_wow_singleplayer_game/)
 > · [Discord](https://discord.gg/UzxaZuSAk)). This repository is a from-source local build of the
 > game, running on the [benilla](#how-its-built) / [wenilla](#how-its-built) engine, for personal use.
-> This fork adds the **continent run** described below.
+> This fork adds the **Undying Run** described below.
 
 Pick a class and run the Eastern Kingdoms. The hero crosses the continent from Westfall to
 Naxxramas faster than a mount, while enemies chase and die and every kill feeds your level-ups.
@@ -34,7 +34,7 @@ fully offline and self-contained.
   </tr>
 </table>
 
-### The continent run
+### The Undying Run
 
 - **Thirteen stops**, Westfall to Naxxramas, joined along the road so consecutive zones touch. The
   hero runs at twice his class's base speed, faster than a mount, and gains levels on the way.
@@ -65,7 +65,7 @@ fully offline and self-contained.
 ## Play it
 
 ```bash
-git clone https://github.com/marekvi95/azeroth-survivors-re
+git clone https://github.com/marekvi95/undying-run
 cd azeroth-survivors-re
 make build     # fetch game data + install toolchain + build the wasm (~5.5 GB download)
 make start     # → open http://127.0.0.1:8090/

@@ -1950,7 +1950,7 @@ pub(crate) static MAPS: &[MapDef] = &[
     // A continent run: the zones on its route (see `continent::ROUTES`) supply the horde. Last, so
     // the saved map picks keep their indices. Starts at Westfall; the leash covers Naxxramas.
     MapDef {
-        name: "Eastern Kingdoms Run",
+        name: "Undying Run",
         zone: "Eastern Kingdoms",
         map: 0,
         center: [-10252.2, 1483.5, 41.6],

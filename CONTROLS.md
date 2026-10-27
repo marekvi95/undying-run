@@ -49,7 +49,7 @@ The camera is the same with a pad as with the mouse: it trails the hero's headin
 and the zoom is by wheel or **L / R**. While the right stick steers, the view eases a few yards
 ahead of where the hero runs.
 
-On a continent run, a gold 3D arrow floats above the hero and points at the next zone along the
+On the Undying Run, a gold 3D arrow floats above the hero and points at the next zone along the
 ground, with the distance to that zone and the number of stops reached under the banner. The
 horde keeps pace with a hero running the road, and a heal gem lands on the road ahead, toward the
 arrow, every 8 seconds (up to three waiting), so healing does not wait on kills.
